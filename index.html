@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoicePrint ID - Voice Biometrics System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: '#2563eb',
+              secondary: '#1e40af',
+              accent: '#3b82f6',
+              dark: '#1f2937',
+              light: '#f9fafb',
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+      body {
+        font-family: 'Inter', sans-serif;
+        background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+        min-height: 100vh;
+      }
+
+      .card {
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1),
+          0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      }
+
+      .waveform {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 40px;
+        width: 100%;
+      }
+
+      .bar {
+        width: 4px;
+        height: 10px;
+        background-color: #3b82f6;
+        border-radius: 3px;
+        animation: wave 1.5s ease-in-out infinite;
+      }
+
+      @keyframes wave {
+        0%,
+        100% {
+          height: 10px;
+        }
+        50% {
+          height: 30px;
+        }
+      }
+
+      .bar:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .bar:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      .bar:nth-child(4) {
+        animation-delay: 0.6s;
+      }
+      .bar:nth-child(5) {
+        animation-delay: 0.8s;
+      }
+      .bar:nth-child(6) {
+        animation-delay: 1s;
+      }
+      .bar:nth-child(7) {
+        animation-delay: 1.2s;
+      }
+      .bar:nth-child(8) {
+        animation-delay: 1.4s;
+      }
+
+      .recording .bar {
+        animation: none;
+        background-color: #ef4444;
+      }
+
+      .tab {
+        transition: all 0.3s ease;
+      }
+
+      .tab.active {
+        background-color: #2563eb;
+        color: white;
+      }
+
+      .response-box {
+        transition: all 0.3s ease;
+        max-height: 0;
+        overflow: hidden;
+      }
+
+      .response-box.open {
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .loader {
+        border-top-color: #3b82f6;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50">
+    <div class="min-h-screen flex flex-col">
+      <!-- Header -->
+      <header class="bg-white shadow-sm">
+        <div
+          class="container mx-auto px-4 py-4 flex justify-between items-center"
+        >
+          <div class="flex items-center space-x-2">
+            <div class="bg-primary p-2 rounded-full">
+              <i class="fas fa-microphone text-white text-xl"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-800">VoicePrint ID</h1>
+          </div>
+          <div class="flex items-center space-x-4">
+            <button
+              id="api-url"
+              class="text-gray-600 text-sm bg-gray-100 px-2 py-1 rounded"
+            >
+              API: back-production-cb84.up.railway.app
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main class="flex-grow container mx-auto px-4 py-8">
+        <div class="max-w-4xl mx-auto">
+          <div class="text-center mb-12">
+            <h2 class="text-3xl font-bold text-gray-800 mb-3">
+              Voice Biometrics Authentication
+            </h2>
+            <p class="text-gray-600">
+              Secure access using your unique voiceprint
+            </p>
+          </div>
+
+          <!-- Tabs -->
+          <div class="flex bg-gray-100 rounded-lg p-1 mb-8">
+            <button
+              class="tab flex-1 py-2 px-4 rounded-lg text-center font-medium active"
+              data-tab="create-user"
+            >
+              Create User
+            </button>
+            <button
+              class="tab flex-1 py-2 px-4 rounded-lg text-center font-medium"
+              data-tab="enroll"
+            >
+              Voice Enrollment
+            </button>
+            <button
+              class="tab flex-1 py-2 px-4 rounded-lg text-center font-medium"
+              data-tab="verify"
+            >
+              Verify Identity
+            </button>
+          </div>
+
+          <!-- Create User Form -->
+          <div id="create-user-tab" class="tab-content">
+            <div class="card bg-white rounded-xl shadow-md p-6 mb-6">
+              <h3 class="text-xl font-semibold text-gray-800 mb-4">
+                Create New User
+              </h3>
+              <form id="create-user-form">
+                <div class="mb-4">
+                  <label class="block text-gray-700 mb-2" for="user-id">
+                    User ID
+                  </label>
+                  <input
+                    type="text"
+                    id="user-id"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="Enter unique user ID"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  class="w-full bg-primary hover:bg-secondary text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
+                >
+                  <span id="create-user-text">Create User</span>
+                  <div
+                    id="create-user-spinner"
+                    class="loader ease-linear rounded-full border-2 border-t-2 border-gray-200 h-5 w-5 ml-2 hidden"
+                  ></div>
+                </button>
+              </form>
+              <div class="response-box mt-4 bg-gray-50 p-4 rounded-lg">
+                <pre class="text-sm text-gray-800"></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Enrollment Form -->
+          <div id="enroll-tab" class="tab-content hidden">
+            <div class="card bg-white rounded-xl shadow-md p-6 mb-6">
+              <h3 class="text-xl font-semibold text-gray-800 mb-4">
+                Voice Enrollment
+              </h3>
+              <form id="enroll-form">
+                <div class="mb-4">
+                  <label class="block text-gray-700 mb-2" for="enroll-user-id">
+                    User ID
+                  </label>
+                  <input
+                    type="text"
+                    id="enroll-user-id"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="Enter your user ID"
+                  />
+                </div>
+                <div class="mb-4">
+                  <label class="block text-gray-700 mb-2" for="phrase">
+                    Verification Phrase
+                  </label>
+                  <input
+                    type="text"
+                    id="phrase"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="Enter your verification phrase"
+                  />
+                  <p class="text-sm text-gray-500 mt-1">
+                    This phrase will be used for identity verification.
+                  </p>
+                </div>
+                <div class="mb-6">
+                  <label class="block text-gray-700 mb-2">
+                    Record Your Voice
+                  </label>
+                  <div
+                    class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center"
+                  >
+                    <div class="waveform mb-4">
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                    </div>
+                    <button
+                      type="button"
+                      id="record-btn"
+                      class="bg-primary hover:bg-secondary text-white font-medium py-2 px-6 rounded-lg transition-colors"
+                    >
+                      <i class="fas fa-microphone mr-2"></i>
+                      Start Recording
+                    </button>
+                    <p class="text-sm text-gray-500 mt-3">
+                      Press the button and read the phrase clearly
+                    </p>
+                    <audio
+                      id="recorded-audio"
+                      class="w-full mt-4"
+                      controls
+                    ></audio>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  class="w-full bg-primary hover:bg-secondary text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
+                >
+                  <span id="enroll-text">Submit Enrollment</span>
+                  <div
+                    id="enroll-spinner"
+                    class="loader ease-linear rounded-full border-2 border-t-2 border-gray-200 h-5 w-5 ml-2 hidden"
+                  ></div>
+                </button>
+              </form>
+              <div class="response-box mt-4 bg-gray-50 p-4 rounded-lg">
+                <pre class="text-sm text-gray-800"></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Verification Form -->
+          <div id="verify-tab" class="tab-content hidden">
+            <div class="card bg-white rounded-xl shadow-md p-6 mb-6">
+              <h3 class="text-xl font-semibold text-gray-800 mb-4">
+                Verify Identity
+              </h3>
+              <form id="verify-form">
+                <div class="mb-4">
+                  <label class="block text-gray-700 mb-2" for="verify-user-id">
+                    User ID
+                  </label>
+                  <input
+                    type="text"
+                    id="verify-user-id"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="Enter your user ID"
+                  />
+                </div>
+                <div class="mb-4">
+                  <label class="block text-gray-700 mb-2" for="verify-phrase">
+                    Verification Phrase
+                  </label>
+                  <input
+                    type="text"
+                    id="verify-phrase"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="Enter your verification phrase"
+                  />
+                </div>
+                <div class="mb-6">
+                  <label class="block text-gray-700 mb-2">
+                    Record Your Voice
+                  </label>
+                  <div
+                    class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center"
+                  >
+                    <div class="waveform mb-4">
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                      <div class="bar"></div>
+                    </div>
+                    <button
+                      type="button"
+                      id="verify-record-btn"
+                      class="bg-primary hover:bg-secondary text-white font-medium py-2 px-6 rounded-lg transition-colors"
+                    >
+                      <i class="fas fa-microphone mr-2"></i>
+                      Start Recording
+                    </button>
+                    <p class="text-sm text-gray-500 mt-3">
+                      Press the button and read the phrase clearly
+                    </p>
+                    <audio
+                      id="verify-recorded-audio"
+                      class="w-full mt-4"
+                      controls
+                    ></audio>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  class="w-full bg-primary hover:bg-secondary text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
+                >
+                  <span id="verify-text">Verify Identity</span>
+                  <div
+                    id="verify-spinner"
+                    class="loader ease-linear rounded-full border-2 border-t-2 border-gray-200 h-5 w-5 ml-2 hidden"
+                  ></div>
+                </button>
+              </form>
+              <div class="response-box mt-4 bg-gray-50 p-4 rounded-lg">
+                <pre class="text-sm text-gray-800"></pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- API Status -->
+          <div class="bg-white rounded-xl shadow-md p-6">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">API Status</h3>
+            <div class="flex items-center">
+              <div
+                id="status-indicator"
+                class="w-3 h-3 rounded-full bg-green-500 mr-2"
+              ></div>
+              <span id="status-text" class="text-gray-700">
+                Checking API status...
+              </span>
+              <button
+                id="health-check"
+                class="ml-auto bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-1 px-3 rounded-lg transition-colors text-sm"
+              >
+                Check Health
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Footer -->
+      <footer class="bg-white border-t border-gray-200 mt-12">
+        <div class="container mx-auto px-4 py-6">
+          <div class="flex flex-col md:flex-row justify-between items-center">
+            <p class="text-gray-600 text-sm mb-4 md:mb-0">
+              © 2023 VoicePrint ID. All rights reserved.
+            </p>
+            <div class="flex space-x-4">
+              <a
+                href="#"
+                class="text-gray-600 hover:text-primary transition-colors text-sm"
+              >
+                Privacy Policy
+              </a>
+              <a
+                href="#"
+                class="text-gray-600 hover:text-primary transition-colors text-sm"
+              >
+                Terms of Service
+              </a>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      // API configuration
+      const API_BASE_URL = 'https://back-production-cb84.up.railway.app';
+
+      // Global variables for media recording
+      let mediaRecorder;
+      let audioChunks = [];
+      let isRecording = false;
+      let currentAudioBlob = null;
+
+      // Tab switching functionality
+      document.querySelectorAll('.tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          // Remove active class from all tabs
+          document
+            .querySelectorAll('.tab')
+            .forEach((t) => t.classList.remove('active'));
+          // Add active class to clicked tab
+          tab.classList.add('active');
+
+          // Hide all tab content
+          document
+            .querySelectorAll('.tab-content')
+            .forEach((content) => content.classList.add('hidden'));
+
+          // Show the selected tab content
+          const tabId = tab.getAttribute('data-tab');
+          document.getElementById(`${tabId}-tab`).classList.remove('hidden');
+        });
+      });
+
+      // Create User Form
+      document
+        .getElementById('create-user-form')
+        .addEventListener('submit', async function (e) {
+          e.preventDefault();
+          const userId = document.getElementById('user-id').value;
+          const responseBox = this.nextElementSibling;
+          const spinner = document.getElementById('create-user-spinner');
+          const buttonText = document.getElementById('create-user-text');
+
+          if (!userId) {
+            showResponse(responseBox, 'Error: User ID is required', false);
+            return;
+          }
+
+          // Show loading state
+          spinner.classList.remove('hidden');
+          buttonText.textContent = 'Creating...';
+
+          try {
+            const response = await fetch(`${API_BASE_URL}/api/v1/users`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ user_id: userId }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+              showResponse(
+                responseBox,
+                `User created successfully!\nUser ID: ${
+                  data.user_id
+                }\nCreated at: ${new Date(data.created_at).toLocaleString()}`,
+                true
+              );
+            } else {
+              showResponse(
+                responseBox,
+                `Error: ${data.detail || 'Failed to create user'}`,
+                false
+              );
+            }
+          } catch (error) {
+            showResponse(responseBox, `Error: ${error.message}`, false);
+          } finally {
+            // Hide loading state
+            spinner.classList.add('hidden');
+            buttonText.textContent = 'Create User';
+          }
+        });
+
+      // Enrollment Form - FIXED to use query parameters
+      document
+        .getElementById('enroll-form')
+        .addEventListener('submit', async function (e) {
+          e.preventDefault();
+          const userId = document.getElementById('enroll-user-id').value;
+          const phrase = document.getElementById('phrase').value;
+          const responseBox = this.nextElementSibling;
+          const spinner = document.getElementById('enroll-spinner');
+          const buttonText = document.getElementById('enroll-text');
+
+          if (!userId || !phrase) {
+            showResponse(
+              responseBox,
+              'Error: User ID and phrase are required',
+              false
+            );
+            return;
+          }
+
+          if (!currentAudioBlob) {
+            showResponse(
+              responseBox,
+              'Error: Please record your voice first',
+              false
+            );
+            return;
+          }
+
+          // Show loading state
+          spinner.classList.remove('hidden');
+          buttonText.textContent = 'Processing...';
+
+          try {
+            const formData = new FormData();
+            formData.append('audio_file', currentAudioBlob, 'recording.wav');
+
+            // Use query parameters instead of form data for user_id and phrase
+            const response = await fetch(
+              `${API_BASE_URL}/api/v1/enrollments?user_id=${encodeURIComponent(
+                userId
+              )}&phrase=${encodeURIComponent(phrase)}`,
+              {
+                method: 'POST',
+                body: formData,
+              }
+            );
+
+            const data = await response.json();
+
+            if (response.ok) {
+              showResponse(
+                responseBox,
+                `Voice enrollment successful!\nUser ID: ${data.user_id}\nPhrase: ${data.phrase}\nEnrollment ID: ${data.enrollment_id}`,
+                true
+              );
+            } else {
+              showResponse(
+                responseBox,
+                `Error: ${JSON.stringify(data, null, 2)}`,
+                false
+              );
+            }
+          } catch (error) {
+            showResponse(responseBox, `Error: ${error.message}`, false);
+          } finally {
+            // Hide loading state
+            spinner.classList.add('hidden');
+            buttonText.textContent = 'Submit Enrollment';
+          }
+        });
+
+      // Verification Form - FIXED to use query parameters
+      document
+        .getElementById('verify-form')
+        .addEventListener('submit', async function (e) {
+          e.preventDefault();
+          const userId = document.getElementById('verify-user-id').value;
+          const phrase = document.getElementById('verify-phrase').value;
+          const responseBox = this.nextElementSibling;
+          const spinner = document.getElementById('verify-spinner');
+          const buttonText = document.getElementById('verify-text');
+
+          if (!userId || !phrase) {
+            showResponse(
+              responseBox,
+              'Error: User ID and phrase are required',
+              false
+            );
+            return;
+          }
+
+          if (!currentAudioBlob) {
+            showResponse(
+              responseBox,
+              'Error: Please record your voice first',
+              false
+            );
+            return;
+          }
+
+          // Show loading state
+          spinner.classList.remove('hidden');
+          buttonText.textContent = 'Verifying...';
+
+          try {
+            const formData = new FormData();
+            formData.append('audio_file', currentAudioBlob, 'verification.wav');
+
+            // Use query parameters instead of form data for user_id and phrase
+            const response = await fetch(
+              `${API_BASE_URL}/api/v1/verify?user_id=${encodeURIComponent(
+                userId
+              )}&phrase=${encodeURIComponent(phrase)}`,
+              {
+                method: 'POST',
+                body: formData,
+              }
+            );
+
+            const data = await response.json();
+
+            if (response.ok) {
+              if (data.verified) {
+                showResponse(
+                  responseBox,
+                  `Identity verified successfully!\nUser ID: ${userId}\nConfidence: ${data.confidence.toFixed(
+                    4
+                  )}\nMessage: ${data.message}`,
+                  true
+                );
+              } else {
+                showResponse(
+                  responseBox,
+                  `Verification failed!\nUser ID: ${userId}\nConfidence: ${data.confidence.toFixed(
+                    4
+                  )}\nMessage: ${data.message}`,
+                  false
+                );
+              }
+            } else {
+              showResponse(
+                responseBox,
+                `Error: ${JSON.stringify(data, null, 2)}`,
+                false
+              );
+            }
+          } catch (error) {
+            showResponse(responseBox, `Error: ${error.message}`, false);
+          } finally {
+            // Hide loading state
+            spinner.classList.add('hidden');
+            buttonText.textContent = 'Verify Identity';
+          }
+        });
+
+      // Health check button
+      document
+        .getElementById('health-check')
+        .addEventListener('click', async () => {
+          const statusIndicator = document.getElementById('status-indicator');
+          const statusText = document.getElementById('status-text');
+
+          statusIndicator.classList.remove('bg-green-500', 'bg-red-500');
+          statusIndicator.classList.add('bg-yellow-500');
+          statusText.textContent = 'Checking API status...';
+
+          try {
+            const response = await fetch(`${API_BASE_URL}/health`);
+            if (response.ok) {
+              statusIndicator.classList.remove('bg-yellow-500');
+              statusIndicator.classList.add('bg-green-500');
+              statusText.textContent =
+                'API is healthy and responding correctly!';
+            } else {
+              throw new Error('API returned non-OK status');
+            }
+          } catch (error) {
+            statusIndicator.classList.remove('bg-yellow-500');
+            statusIndicator.classList.add('bg-red-500');
+            statusText.textContent =
+              'API is not responding. Please check your connection.';
+          }
+        });
+
+      // Recording functionality
+      async function startRecording(audioElementId) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          mediaRecorder = new MediaRecorder(stream);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            audioChunks.push(event.data);
+          };
+
+          mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            currentAudioBlob = audioBlob;
+            const audioUrl = URL.createObjectURL(audioBlob);
+            document.getElementById(audioElementId).src = audioUrl;
+
+            // Stop all tracks of the stream
+            stream.getTracks().forEach((track) => track.stop());
+          };
+
+          mediaRecorder.start();
+          isRecording = true;
+
+          return true;
+        } catch (error) {
+          console.error('Error starting recording:', error);
+          alert(
+            'Could not start recording. Please ensure you have a microphone connected and have granted permission.'
+          );
+          return false;
+        }
+      }
+
+      function stopRecording() {
+        if (mediaRecorder && isRecording) {
+          mediaRecorder.stop();
+          isRecording = false;
+          return true;
+        }
+        return false;
+      }
+
+      // Record button for enrollment
+      document
+        .getElementById('record-btn')
+        .addEventListener('click', async function () {
+          const waveform = this.parentElement.previousElementSibling;
+
+          if (!isRecording) {
+            const success = await startRecording('recorded-audio');
+            if (success) {
+              waveform.classList.add('recording');
+              this.innerHTML = '<i class="fas fa-stop mr-2"></i>Stop Recording';
+              this.classList.remove('bg-primary');
+              this.classList.add('bg-red-500', 'hover:bg-red-600');
+            }
+          } else {
+            stopRecording();
+            waveform.classList.remove('recording');
+            this.innerHTML =
+              '<i class="fas fa-microphone mr-2"></i>Start Recording';
+            this.classList.remove('bg-red-500', 'hover:bg-red-600');
+            this.classList.add('bg-primary');
+          }
+        });
+
+      // Record button for verification
+      document
+        .getElementById('verify-record-btn')
+        .addEventListener('click', async function () {
+          const waveform = this.parentElement.previousElementSibling;
+
+          if (!isRecording) {
+            const success = await startRecording('verify-recorded-audio');
+            if (success) {
+              waveform.classList.add('recording');
+              this.innerHTML = '<i class="fas fa-stop mr-2"></i>Stop Recording';
+              this.classList.remove('bg-primary');
+              this.classList.add('bg-red-500', 'hover:bg-red-600');
+            }
+          } else {
+            stopRecording();
+            waveform.classList.remove('recording');
+            this.innerHTML =
+              '<i class="fas fa-microphone mr-2"></i>Start Recording';
+            this.classList.remove('bg-red-500', 'hover:bg-red-600');
+            this.classList.add('bg-primary');
+          }
+        });
+
+      // Helper functions
+      function showResponse(element, message, isSuccess) {
+        element.classList.add('open');
+        element.querySelector('pre').textContent = message;
+        element.style.backgroundColor = isSuccess ? '#f0f9ff' : '#fef2f2';
+        element.querySelector('pre').style.color = isSuccess
+          ? '#0c4a6e'
+          : '#7f1d1d';
+
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+          element.classList.remove('open');
+        }, 5000);
+      }
+
+      // Check API status on page load
+      window.addEventListener('load', () => {
+        document.getElementById('health-check').click();
+      });
+    </script>
+  </body>
+</html>

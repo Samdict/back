@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 import os
 import uuid
 from datetime import datetime
+import numpy as np  # Add this import
+import aiofiles  # Add this import
 
 from . import models, schemas, voice_utils
 from .database import get_db
@@ -54,6 +56,9 @@ async def create_enrollment(
             detail="File must be an audio file"
         )
     
+    # Initialize file_path variable to handle cleanup in case of error
+    file_path = None
+    
     try:
         # Save uploaded file temporarily
         file_path = f"uploads/{uuid.uuid4()}_{audio_file.filename}"
@@ -78,13 +83,14 @@ async def create_enrollment(
         db.refresh(db_enrollment)
         
         # Clean up temporary file
-        os.remove(file_path)
+        if os.path.exists(file_path):
+            os.remove(file_path)
         
         return db_enrollment
         
     except Exception as e:
         # Clean up temporary file if it exists
-        if os.path.exists(file_path):
+        if file_path and os.path.exists(file_path):
             os.remove(file_path)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -126,6 +132,9 @@ async def verify_user(
             detail="File must be an audio file"
         )
     
+    # Initialize file_path variable to handle cleanup in case of error
+    file_path = None
+    
     try:
         # Save uploaded file temporarily
         file_path = f"uploads/{uuid.uuid4()}_{audio_file.filename}"
@@ -151,7 +160,8 @@ async def verify_user(
                 best_similarity = similarity
         
         # Clean up temporary file
-        os.remove(file_path)
+        if os.path.exists(file_path):
+            os.remove(file_path)
         
         # Determine verification result
         threshold = 0.85  # Adjust based on your requirements
@@ -165,7 +175,7 @@ async def verify_user(
         
     except Exception as e:
         # Clean up temporary file if it exists
-        if os.path.exists(file_path):
+        if file_path and os.path.exists(file_path):
             os.remove(file_path)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

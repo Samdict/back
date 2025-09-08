@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 import os
 import uuid
 from datetime import datetime
-import numpy as np
-import aiofiles
+import numpy as np  # Add this import
+import aiofiles  # Add this import
 
 from . import models, schemas, voice_utils
 from .database import get_db
@@ -50,13 +50,11 @@ async def create_enrollment(
         )
     
     # Validate audio file
-    if not audio_file.content_type or not audio_file.content_type.startswith("audio/"):
-        # Be more lenient with content type checking for uploaded files
-        if not audio_file.filename or not any(audio_file.filename.lower().endswith(ext) for ext in ['.wav', '.mp3', '.m4a', '.ogg', '.webm']):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="File must be an audio file"
-            )
+    if not audio_file.content_type.startswith("audio/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an audio file"
+        )
     
     # Initialize file_path variable to handle cleanup in case of error
     file_path = None
@@ -94,7 +92,6 @@ async def create_enrollment(
         # Clean up temporary file if it exists
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
-        print(f"Error in enrollment: {str(e)}")  # Add logging
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing enrollment: {str(e)}"
@@ -122,15 +119,9 @@ async def verify_user(
         models.Enrollment.phrase == phrase
     ).all()
     
-    print(f"Found {len(enrollments)} enrollments for user {user_id} and phrase '{phrase}'")  # Debug logging
+    print(f"Found {len(enrollments)} enrollments for user {user_id} and phrase '{phrase}'")
     
     if not enrollments:
-        # Let's also check what enrollments exist for this user
-        all_user_enrollments = db.query(models.Enrollment).filter(
-            models.Enrollment.user_id == user_id
-        ).all()
-        print(f"All enrollments for user {user_id}: {[(e.phrase, e.id) for e in all_user_enrollments]}")  # Debug logging
-        
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No enrollments found for this user and phrase"
@@ -138,7 +129,6 @@ async def verify_user(
     
     # Validate audio file
     if not audio_file.content_type or not audio_file.content_type.startswith("audio/"):
-        # Be more lenient with content type checking
         if not audio_file.filename or not any(audio_file.filename.lower().endswith(ext) for ext in ['.wav', '.mp3', '.m4a', '.ogg', '.webm']):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -155,7 +145,7 @@ async def verify_user(
             content = await audio_file.read()
             await f.write(content)
         
-        # Process verification audio
+        # Process verification audio using enhanced features
         verification_embedding = await voice_utils.voice_processor.process_audio_file(file_path)
         
         # Compare with stored enrollments
@@ -177,10 +167,10 @@ async def verify_user(
             os.remove(file_path)
         
         # Determine verification result
-        threshold = 0.75  # Match the threshold in voice_utils.py
+        threshold = 0.7
         verified = best_similarity >= threshold
         
-        print(f"Verification result: similarity={best_similarity}, threshold={threshold}, verified={verified}")  # Debug logging
+        print(f"Verification result: similarity={best_similarity}, threshold={threshold}, verified={verified}")
         
         return {
             "verified": verified,
@@ -192,13 +182,13 @@ async def verify_user(
         # Clean up temporary file if it exists
         if file_path and os.path.exists(file_path):
             os.remove(file_path)
-        print(f"Error in verification: {str(e)}")  # Add logging
+        print(f"Error in verification: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error during verification: {str(e)}"
         )
 
-@router.get("/users/{user_id}/enrollments", response_model=list[schemas.EnrollmentResponse])
+@router.get("/users/{user_id}/enrollments")
 async def get_user_enrollments(user_id: str, db: Session = Depends(get_db)):
     """Get all enrollments for a user"""
     # Check if user exists

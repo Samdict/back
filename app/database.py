@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 import os
 
 # Use SQLite for simplicity and lightweight deployment
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./voice_biometrics.db")
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./voice_biometrics_v2.db")
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 

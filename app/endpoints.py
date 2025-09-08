@@ -170,7 +170,7 @@ async def verify_user(
         
         # Determine verification result
         # Use a higher threshold for Resemblyzer (0.85), lower for fallback (0.7)
-        threshold = 0.75 if voice_utils.voice_processor.detect_embedding_type(verification_embedding) == "resemblyzer" else 0.7
+        threshold = 0.70 if voice_utils.voice_processor.detect_embedding_type(verification_embedding) == "resemblyzer" else 0.7
         verified = best_similarity >= threshold
         
         print(f"Verification result: similarity={best_similarity}, threshold={threshold}, verified={verified}")

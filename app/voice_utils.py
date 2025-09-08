@@ -81,7 +81,7 @@ class VoiceProcessor:
         else:
             return "unknown"
     
-    def compare_embeddings(self, embedding1, embedding2, threshold=0.7):
+    def compare_embeddings(self, embedding1, embedding2, threshold=0.85):
         """Compare two embeddings using cosine similarity with compatibility handling"""
         # Detect embedding types
         type1 = self.detect_embedding_type(embedding1)

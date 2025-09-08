@@ -158,6 +158,8 @@ async def verify_user(
             verified, similarity = voice_utils.voice_processor.compare_embeddings(
                 verification_embedding, stored_embedding
             )
+
+            print(f"Compared with enrollment {enrollment.id}: similarity={similarity}")  # Add this line
             
             if similarity > best_similarity:
                 best_similarity = similarity
@@ -167,7 +169,7 @@ async def verify_user(
             os.remove(file_path)
         
         # Determine verification result
-        threshold = 0.7
+        threshold = 0.85
         verified = best_similarity >= threshold
         
         print(f"Verification result: similarity={best_similarity}, threshold={threshold}, verified={verified}")

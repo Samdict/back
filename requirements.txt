@@ -2,7 +2,7 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 librosa==0.10.1
-numpy==1.24.3
+numpy==1.23.5  # Downgraded from 1.24.3
 pydantic==2.5.0
 python-multipart==0.0.6
 aiofiles==23.2.1

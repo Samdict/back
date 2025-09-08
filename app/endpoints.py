@@ -191,7 +191,7 @@ async def verify_user(
             detail=f"Error during verification: {str(e)}"
         )
 
-@router.get("/users/{user_id}/enrollments")
+@router.get("/users/{user_id}/enrollments", response_model=schemas.EnrollmentListResponse)
 async def get_user_enrollments(user_id: str, db: Session = Depends(get_db)):
     """Get all enrollments for a user"""
     # Check if user exists
@@ -207,7 +207,20 @@ async def get_user_enrollments(user_id: str, db: Session = Depends(get_db)):
         models.Enrollment.user_id == user_id
     ).all()
     
-    return enrollments
+    # Convert to response model without embedding
+    enrollment_responses = []
+    for enrollment in enrollments:
+        enrollment_responses.append(schemas.EnrollmentResponseNoEmbedding(
+            id=enrollment.id,
+            user_id=enrollment.user_id,
+            phrase=enrollment.phrase,
+            created_at=enrollment.created_at
+        ))
+    
+    return {
+        "enrollments": enrollment_responses,
+        "total": len(enrollment_responses)
+    }
 
 @router.delete("/users/{user_id}")
 async def delete_user(user_id: str, db: Session = Depends(get_db)):

@@ -25,6 +25,16 @@ class EnrollmentResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# Add this new schema for responses that don't include the embedding
+class EnrollmentResponseNoEmbedding(BaseModel):
+    id: int = Field(..., description="The enrollment ID")
+    user_id: str
+    phrase: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
 class VerificationRequest(BaseModel):
     user_id: str
     phrase: str
@@ -35,5 +45,5 @@ class VerificationResponse(BaseModel):
     message: str
 
 class EnrollmentListResponse(BaseModel):
-    enrollments: List[EnrollmentResponse]
+    enrollments: List[EnrollmentResponseNoEmbedding]
     total: int

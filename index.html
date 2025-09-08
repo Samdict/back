@@ -187,6 +187,12 @@
             >
               Verify Identity
             </button>
+            <button
+              class="tab flex-1 py-2 px-4 rounded-lg text-center font-medium"
+              data-tab="manage"
+            >
+              Manage Users
+            </button>
           </div>
 
           <!-- Create User Form -->
@@ -389,6 +395,37 @@
             </div>
           </div>
 
+          <!-- Management Tab -->
+          <div id="manage-tab" class="tab-content hidden">
+            <div class="card bg-white rounded-xl shadow-md p-6 mb-6">
+              <h3 class="text-xl font-semibold text-gray-800 mb-4">
+                User Management
+              </h3>
+              <div class="mb-4">
+                <label class="block text-gray-700 mb-2" for="manage-user-id">
+                  User ID
+                </label>
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    id="manage-user-id"
+                    class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="Enter user ID to view enrollments"
+                  />
+                  <button
+                    id="view-enrollments-btn"
+                    class="bg-primary hover:bg-secondary text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                  >
+                    View Enrollments
+                  </button>
+                </div>
+              </div>
+              <div class="response-box bg-gray-50 p-4 rounded-lg">
+                <pre class="text-sm text-gray-800"></pre>
+              </div>
+            </div>
+          </div>
+
           <!-- API Status -->
           <div class="bg-white rounded-xl shadow-md p-6">
             <h3 class="text-xl font-semibold text-gray-800 mb-4">API Status</h3>
@@ -522,7 +559,7 @@
           }
         });
 
-      // Enrollment Form - FIXED to use query parameters
+      // Enrollment Form - FIXED to use correct field name
       document
         .getElementById('enroll-form')
         .addEventListener('submit', async function (e) {
@@ -575,7 +612,7 @@
             if (response.ok) {
               showResponse(
                 responseBox,
-                `Voice enrollment successful!\nUser ID: ${data.user_id}\nPhrase: ${data.phrase}\nEnrollment ID: ${data.enrollment_id}`,
+                `Voice enrollment successful!\nUser ID: ${data.user_id}\nPhrase: ${data.phrase}\nEnrollment ID: ${data.id}`,
                 true
               );
             } else {
@@ -678,6 +715,66 @@
           }
         });
 
+      // View Enrollments functionality
+      document
+        .getElementById('view-enrollments-btn')
+        .addEventListener('click', async function () {
+          const userId = document.getElementById('manage-user-id').value;
+          const responseBox = document.querySelector(
+            '#manage-tab .response-box'
+          );
+
+          if (!userId) {
+            showResponse(responseBox, 'Error: User ID is required', false);
+            return;
+          }
+
+          try {
+            const response = await fetch(
+              `${API_BASE_URL}/api/v1/users/${encodeURIComponent(
+                userId
+              )}/enrollments`
+            );
+
+            const data = await response.json();
+
+            if (response.ok) {
+              if (data.length === 0) {
+                showResponse(
+                  responseBox,
+                  `No enrollments found for user: ${userId}`,
+                  true
+                );
+              } else {
+                const enrollmentsList = data
+                  .map(
+                    (enrollment) =>
+                      `Enrollment ID: ${enrollment.id}\nPhrase: "${
+                        enrollment.phrase
+                      }"\nCreated: ${new Date(
+                        enrollment.created_at
+                      ).toLocaleString()}`
+                  )
+                  .join('\n\n');
+
+                showResponse(
+                  responseBox,
+                  `Found ${data.length} enrollment(s) for user: ${userId}\n\n${enrollmentsList}`,
+                  true
+                );
+              }
+            } else {
+              showResponse(
+                responseBox,
+                `Error: ${data.detail || 'Failed to fetch enrollments'}`,
+                false
+              );
+            }
+          } catch (error) {
+            showResponse(responseBox, `Error: ${error.message}`, false);
+          }
+        });
+
       // Health check button
       document
         .getElementById('health-check')
@@ -711,9 +808,15 @@
       async function startRecording(audioElementId) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
+            audio: {
+              sampleRate: 16000,
+              channelCount: 1,
+              volume: 1.0,
+            },
           });
-          mediaRecorder = new MediaRecorder(stream);
+          mediaRecorder = new MediaRecorder(stream, {
+            mimeType: 'audio/webm;codecs=opus',
+          });
           audioChunks = [];
 
           mediaRecorder.ondataavailable = (event) => {
@@ -721,7 +824,7 @@
           };
 
           mediaRecorder.onstop = () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             currentAudioBlob = audioBlob;
             const audioUrl = URL.createObjectURL(audioBlob);
             document.getElementById(audioElementId).src = audioUrl;
@@ -809,10 +912,10 @@
           ? '#0c4a6e'
           : '#7f1d1d';
 
-        // Auto-hide after 5 seconds
+        // Auto-hide after 10 seconds for longer messages
         setTimeout(() => {
           element.classList.remove('open');
-        }, 5000);
+        }, 10000);
       }
 
       // Check API status on page load

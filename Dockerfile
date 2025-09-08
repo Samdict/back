@@ -1,58 +1,40 @@
-# FROM python:3.11-slim
+# Stage 1: builder
+FROM python:3.11-slim as builder
 
-# WORKDIR /app
+WORKDIR /app
 
-# # Install system dependencies including build tools
-# RUN apt-get update && apt-get install -y \
-#     libsndfile1 \
-#     ffmpeg \
-#     gcc \
-#     g++ \
-#     make \
-#     && rm -rf /var/lib/apt/lists/*
+# Install system dependencies including build tools
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    make \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# # Copy requirements and install Python dependencies
-# COPY requirements.txt .
-# RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
 
-# # Remove build tools to keep image small
-# RUN apt-get remove -y gcc g++ make && apt-get autoremove -y
-
-# # Copy application code
-# COPY app/ ./app/
-# COPY main.py .
-
-# # Create uploads directory
-# RUN mkdir -p uploads
-
-# # Expose port
-# EXPOSE 8000
-
-# # Run the application
-# CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Stage 2: runtime
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     libsndfile1 \
-    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy installed packages from builder stage
+COPY --from=builder /root/.local /root/.local
 
 # Copy application code
-COPY app/ ./app/
-COPY main.py .
+COPY . .
 
-# Create uploads directory
-RUN mkdir -p uploads
+# Make sure scripts in .local are usable
+ENV PATH=/root/.local/bin:$PATH
 
-# Expose port
+# Expose the port that the application will run on
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to run the application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

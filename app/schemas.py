@@ -17,7 +17,7 @@ class EnrollmentCreate(BaseModel):
     phrase: str
 
 class EnrollmentResponse(BaseModel):
-    enrollment_id: int
+    id: int
     user_id: str
     phrase: str
     created_at: datetime

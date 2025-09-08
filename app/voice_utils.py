@@ -102,7 +102,7 @@ class VoiceProcessor:
             # Fallback embeddings are 170-dimensional
             return "fallback" if len(embedding) == 170 else "unknown"
     
-    def compare_embeddings(self, embedding1, embedding2, threshold=0.85):
+    def compare_embeddings(self, embedding1, embedding2, threshold=0.75):
         """Compare two embeddings using cosine similarity with compatibility handling"""
         # Detect embedding types
         type1 = self.detect_embedding_type(embedding1)

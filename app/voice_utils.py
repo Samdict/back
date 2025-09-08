@@ -7,13 +7,12 @@ from sklearn.metrics.pairwise import cosine_similarity
 import warnings
 warnings.filterwarnings("ignore")
 
-# Try to import resemblyzer, fallback to MFCC if not available
 try:
     from resemblyzer import VoiceEncoder, preprocess_wav
     RESEMBLYZER_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     RESEMBLYZER_AVAILABLE = False
-    print("Resemblyzer not available, falling back to MFCC features")
+    print(f"Resemblyzer not available, falling back to MFCC features: {str(e)}")
 
 class VoiceProcessor:
     def __init__(self):

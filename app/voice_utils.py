@@ -64,17 +64,22 @@ class VoiceProcessor:
         # Combine all features into a single embedding
         embedding = np.concatenate([mfcc_stats, chroma_stats, contrast_stats, tonnetz_stats])
         
-        return embedding
+        return embedding.astype(np.float32)
     
     def extract_legacy_features(self, audio):
         """Extract legacy MFCC features for backward compatibility"""
         mfccs = librosa.feature.mfcc(y=audio, sr=self.sample_rate, n_mfcc=20)
         # Average across time to get a fixed-length vector
-        return np.mean(mfccs, axis=1)
+        return np.mean(mfccs, axis=1).astype(np.float32)
     
     def detect_embedding_type(self, embedding):
         """Detect if an embedding is from the legacy or enhanced system"""
-        return "legacy" if len(embedding) == 20 else "enhanced"
+        if len(embedding) == 20:
+            return "legacy"
+        elif len(embedding) == 170:
+            return "enhanced"
+        else:
+            return "unknown"
     
     def compare_embeddings(self, embedding1, embedding2, threshold=0.7):
         """Compare two embeddings using cosine similarity with compatibility handling"""
@@ -84,6 +89,7 @@ class VoiceProcessor:
         
         # If embeddings are from different systems, return low similarity
         if type1 != type2:
+            print(f"Warning: Comparing different embedding types: {type1} vs {type2}")
             return False, 0.0
         
         # Reshape for cosine similarity calculation

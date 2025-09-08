@@ -1,0 +1,211 @@
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, status
+from sqlalchemy.orm import Session
+import os
+import uuid
+from datetime import datetime
+
+from . import models, schemas, voice_utils
+from .database import get_db
+
+router = APIRouter()
+
+# Create uploads directory if it doesn't exist
+os.makedirs("uploads", exist_ok=True)
+
+@router.post("/users", response_model=schemas.UserResponse)
+async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    """Create a new user"""
+    # Check if user already exists
+    db_user = db.query(models.User).filter(models.User.user_id == user.user_id).first()
+    if db_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User ID already exists"
+        )
+    
+    # Create new user
+    db_user = models.User(user_id=user.user_id)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    
+    return db_user
+
+@router.post("/enrollments", response_model=schemas.EnrollmentResponse)
+async def create_enrollment(
+    user_id: str,
+    phrase: str,
+    audio_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Create a new enrollment for a user"""
+    # Check if user exists
+    db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Validate audio file
+    if not audio_file.content_type.startswith("audio/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an audio file"
+        )
+    
+    try:
+        # Save uploaded file temporarily
+        file_path = f"uploads/{uuid.uuid4()}_{audio_file.filename}"
+        async with aiofiles.open(file_path, "wb") as f:
+            content = await audio_file.read()
+            await f.write(content)
+        
+        # Process audio to get embedding
+        embedding = await voice_utils.voice_processor.process_audio_file(file_path)
+        
+        # Convert numpy array to bytes for storage
+        embedding_bytes = embedding.tobytes()
+        
+        # Create enrollment record
+        db_enrollment = models.Enrollment(
+            user_id=user_id,
+            phrase=phrase,
+            embedding=embedding_bytes
+        )
+        db.add(db_enrollment)
+        db.commit()
+        db.refresh(db_enrollment)
+        
+        # Clean up temporary file
+        os.remove(file_path)
+        
+        return db_enrollment
+        
+    except Exception as e:
+        # Clean up temporary file if it exists
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing enrollment: {str(e)}"
+        )
+
+@router.post("/verify", response_model=schemas.VerificationResponse)
+async def verify_user(
+    user_id: str,
+    phrase: str,
+    audio_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Verify a user's identity using voice biometrics"""
+    # Check if user exists
+    db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Get user's enrollments for the specified phrase
+    enrollments = db.query(models.Enrollment).filter(
+        models.Enrollment.user_id == user_id,
+        models.Enrollment.phrase == phrase
+    ).all()
+    
+    if not enrollments:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No enrollments found for this user and phrase"
+        )
+    
+    # Validate audio file
+    if not audio_file.content_type.startswith("audio/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an audio file"
+        )
+    
+    try:
+        # Save uploaded file temporarily
+        file_path = f"uploads/{uuid.uuid4()}_{audio_file.filename}"
+        async with aiofiles.open(file_path, "wb") as f:
+            content = await audio_file.read()
+            await f.write(content)
+        
+        # Process verification audio
+        verification_embedding = await voice_utils.voice_processor.process_audio_file(file_path)
+        
+        # Compare with stored enrollments
+        best_similarity = 0
+        for enrollment in enrollments:
+            # Convert bytes back to numpy array
+            stored_embedding = np.frombuffer(enrollment.embedding, dtype=np.float32)
+            
+            # Compare embeddings
+            verified, similarity = voice_utils.voice_processor.compare_embeddings(
+                verification_embedding, stored_embedding
+            )
+            
+            if similarity > best_similarity:
+                best_similarity = similarity
+        
+        # Clean up temporary file
+        os.remove(file_path)
+        
+        # Determine verification result
+        threshold = 0.85  # Adjust based on your requirements
+        verified = best_similarity >= threshold
+        
+        return {
+            "verified": verified,
+            "confidence": best_similarity,
+            "message": "Verification successful" if verified else "Verification failed"
+        }
+        
+    except Exception as e:
+        # Clean up temporary file if it exists
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error during verification: {str(e)}"
+        )
+
+@router.get("/users/{user_id}/enrollments")
+async def get_user_enrollments(user_id: str, db: Session = Depends(get_db)):
+    """Get all enrollments for a user"""
+    # Check if user exists
+    db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Get user's enrollments
+    enrollments = db.query(models.Enrollment).filter(
+        models.Enrollment.user_id == user_id
+    ).all()
+    
+    return enrollments
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str, db: Session = Depends(get_db)):
+    """Delete a user and all their enrollments"""
+    # Check if user exists
+    db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not db_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Delete user's enrollments first (due to foreign key constraint)
+    db.query(models.Enrollment).filter(models.Enrollment.user_id == user_id).delete()
+    
+    # Delete user
+    db.delete(db_user)
+    db.commit()
+    
+    return {"message": "User deleted successfully"}

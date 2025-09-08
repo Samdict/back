@@ -1,40 +1,25 @@
-# Stage 1: builder
-FROM python:3.11-slim as builder
-
-WORKDIR /app
-
-# Install system dependencies including build tools
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    make \
-    libsndfile1 \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
-
-# Stage 2: runtime
 FROM python:3.11-slim
 
-WORKDIR /app
-
-# Install runtime dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     libsndfile1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy installed packages from builder stage
-COPY --from=builder /root/.local /root/.local
+WORKDIR /app
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Make sure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
+# Clean up unnecessary files
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    find /usr/lib/python3.11 -name '__pycache__' -exec rm -rf {} +
 
-# Expose the port that the application will run on
 EXPOSE 8000
 
-# Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

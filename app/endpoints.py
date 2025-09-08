@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 import os
 import uuid
 from datetime import datetime
-import numpy as np  # Add this import
-import aiofiles  # Add this import
+import numpy as np
+import aiofiles 
 
 from . import models, schemas, voice_utils
 from .database import get_db
@@ -145,7 +145,7 @@ async def verify_user(
             content = await audio_file.read()
             await f.write(content)
         
-        # Process verification audio using enhanced features
+        # Process verification audio
         verification_embedding = await voice_utils.voice_processor.process_audio_file(file_path)
         
         # Compare with stored enrollments
@@ -159,7 +159,7 @@ async def verify_user(
                 verification_embedding, stored_embedding
             )
 
-            print(f"Compared with enrollment {enrollment.id}: similarity={similarity}")  # Add this line
+            print(f"Compared with enrollment {enrollment.id}: similarity={similarity}, embedding_dim={len(stored_embedding)}")
             
             if similarity > best_similarity:
                 best_similarity = similarity
@@ -169,7 +169,8 @@ async def verify_user(
             os.remove(file_path)
         
         # Determine verification result
-        threshold = 0.85
+        # Use a higher threshold for Resemblyzer (0.85), lower for fallback (0.7)
+        threshold = 0.85 if voice_utils.voice_processor.detect_embedding_type(verification_embedding) == "resemblyzer" else 0.7
         verified = best_similarity >= threshold
         
         print(f"Verification result: similarity={best_similarity}, threshold={threshold}, verified={verified}")

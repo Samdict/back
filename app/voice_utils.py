@@ -4,21 +4,38 @@ import io
 import aiofiles
 import os
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings("ignore")
+
+# Try to import resemblyzer, fallback to MFCC if not available
+try:
+    from resemblyzer import VoiceEncoder, preprocess_wav
+    RESEMBLYZER_AVAILABLE = True
+except ImportError:
+    RESEMBLYZER_AVAILABLE = False
+    print("Resemblyzer not available, falling back to MFCC features")
 
 class VoiceProcessor:
     def __init__(self):
         self.sample_rate = 16000
-        self.scaler = StandardScaler()
-        
+        if RESEMBLYZER_AVAILABLE:
+            self.encoder = VoiceEncoder()
+        else:
+            self.encoder = None
+    
     async def process_audio_file(self, file_path: str):
-        """Process audio file and return enhanced speaker embedding"""
+        """Process audio file and return embedding"""
         try:
-            # Load audio using librosa
-            audio, _ = librosa.load(file_path, sr=self.sample_rate)
-            return await self.extract_enhanced_features(audio)
+            if RESEMBLYZER_AVAILABLE:
+                # Use resemblyzer if available
+                wav = preprocess_wav(file_path)
+                embedding = self.encoder.embed_utterance(wav)
+            else:
+                # Fallback to enhanced MFCC features
+                audio, _ = librosa.load(file_path, sr=self.sample_rate)
+                embedding = await self.extract_enhanced_features(audio)
+            
+            return embedding.astype(np.float32)
         except Exception as e:
             raise Exception(f"Error processing audio: {str(e)}")
     
@@ -27,12 +44,20 @@ class VoiceProcessor:
         try:
             # Load audio from bytes
             audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=self.sample_rate)
-            return await self.extract_enhanced_features(audio)
+            
+            if RESEMBLYZER_AVAILABLE:
+                # Use resemblyzer if available
+                embedding = self.encoder.embed_utterance(audio)
+            else:
+                # Fallback to enhanced MFCC features
+                embedding = await self.extract_enhanced_features(audio)
+            
+            return embedding.astype(np.float32)
         except Exception as e:
             raise Exception(f"Error processing audio bytes: {str(e)}")
     
     async def extract_enhanced_features(self, audio):
-        """Extract multiple audio features for better speaker discrimination"""
+        """Extract multiple audio features as fallback when resemblyzer is not available"""
         # Extract multiple features for better speaker discrimination
         mfccs = librosa.feature.mfcc(y=audio, sr=self.sample_rate, n_mfcc=40)
         chroma = librosa.feature.chroma_stft(y=audio, sr=self.sample_rate)
@@ -66,20 +91,14 @@ class VoiceProcessor:
         
         return embedding.astype(np.float32)
     
-    def extract_legacy_features(self, audio):
-        """Extract legacy MFCC features for backward compatibility"""
-        mfccs = librosa.feature.mfcc(y=audio, sr=self.sample_rate, n_mfcc=20)
-        # Average across time to get a fixed-length vector
-        return np.mean(mfccs, axis=1).astype(np.float32)
-    
     def detect_embedding_type(self, embedding):
-        """Detect if an embedding is from the legacy or enhanced system"""
-        if len(embedding) == 20:
-            return "legacy"
-        elif len(embedding) == 170:
-            return "enhanced"
+        """Detect if an embedding is from resemblyzer or the fallback system"""
+        if RESEMBLYZER_AVAILABLE:
+            # Resemblyzer embeddings are 256-dimensional
+            return "resemblyzer" if len(embedding) == 256 else "fallback"
         else:
-            return "unknown"
+            # Fallback embeddings are 170-dimensional
+            return "fallback" if len(embedding) == 170 else "unknown"
     
     def compare_embeddings(self, embedding1, embedding2, threshold=0.85):
         """Compare two embeddings using cosine similarity with compatibility handling"""

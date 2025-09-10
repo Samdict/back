@@ -8,6 +8,8 @@ class User(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, unique=True, index=True)
+    name = Column(String, nullable=False)
+    reg_no = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationship to enrollments

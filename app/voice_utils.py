@@ -5,6 +5,8 @@ if not hasattr(np, 'bool'):
 import librosa
 import io
 import aiofiles
+import hashlib
+from functools import lru_cache
 import os
 from sklearn.metrics.pairwise import cosine_similarity
 import warnings
@@ -24,10 +26,25 @@ class VoiceProcessor:
             self.encoder = VoiceEncoder()
         else:
             self.encoder = None
+        self._cache = {}
+    
+    def _get_audio_hash(self, file_path: str):
+        """Generate hash for audio file for caching"""
+        try:
+            with open(file_path, 'rb') as f:
+                return hashlib.md5(f.read()).hexdigest()
+        except:
+            return str(os.path.getmtime(file_path))
     
     async def process_audio_file(self, file_path: str):
-        """Process audio file and return embedding"""
+        """Process audio file and return embedding with caching"""
         try:
+            # Generate cache key
+            cache_key = self._get_audio_hash(file_path)
+            
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+                
             if RESEMBLYZER_AVAILABLE:
                 # Use resemblyzer if available
                 wav = preprocess_wav(file_path)
@@ -37,10 +54,13 @@ class VoiceProcessor:
                 audio, _ = librosa.load(file_path, sr=self.sample_rate)
                 embedding = await self.extract_enhanced_features(audio)
             
+            # Cache the result
+            self._cache[cache_key] = embedding.astype(np.float32)
+            
             return embedding.astype(np.float32)
         except Exception as e:
             raise Exception(f"Error processing audio: {str(e)}")
-    
+        
     async def process_audio_bytes(self, audio_bytes: bytes):
         """Process audio from bytes and return embedding"""
         try:

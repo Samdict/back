@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 import numpy as np
 import aiofiles 
+import re
 
 from . import models, schemas, voice_utils
 from .database import get_db
@@ -16,17 +17,34 @@ os.makedirs("uploads", exist_ok=True)
 
 @router.post("/users", response_model=schemas.UserResponse)
 async def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    """Create a new user"""
+    """Create a new user with name and registration number"""
+    # Clean and validate input
+    user.name = user.name.strip()
+    user.reg_no = user.reg_no.strip()
+    
+    if not user.name or not user.reg_no:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Name and registration number are required"
+        )
+    
+    # Create user_id from name and reg_no
+    user_id = f"{user.name}_{user.reg_no}"
+    
     # Check if user already exists
-    db_user = db.query(models.User).filter(models.User.user_id == user.user_id).first()
+    db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if db_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User ID already exists"
+            detail="User with this name and registration number already exists"
         )
     
     # Create new user
-    db_user = models.User(user_id=user.user_id)
+    db_user = models.User(
+        user_id=user_id,
+        name=user.name,
+        reg_no=user.reg_no
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -41,6 +59,10 @@ async def create_enrollment(
     db: Session = Depends(get_db)
 ):
     """Create a new enrollment for a user"""
+    # Clean inputs
+    user_id = user_id.strip()
+    phrase = phrase.strip()
+    
     # Check if user exists
     db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not db_user:
@@ -105,6 +127,10 @@ async def verify_user(
     db: Session = Depends(get_db)
 ):
     """Verify a user's identity using voice biometrics"""
+    # Clean inputs
+    user_id = user_id.strip()
+    phrase = phrase.strip()
+    
     # Check if user exists
     db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not db_user:
@@ -194,6 +220,9 @@ async def verify_user(
 @router.get("/users/{user_id}/enrollments", response_model=schemas.EnrollmentListResponse)
 async def get_user_enrollments(user_id: str, db: Session = Depends(get_db)):
     """Get all enrollments for a user"""
+    # Clean input
+    user_id = user_id.strip()
+    
     # Check if user exists
     db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not db_user:
@@ -225,6 +254,9 @@ async def get_user_enrollments(user_id: str, db: Session = Depends(get_db)):
 @router.delete("/users/{user_id}")
 async def delete_user(user_id: str, db: Session = Depends(get_db)):
     """Delete a user and all their enrollments"""
+    # Clean input
+    user_id = user_id.strip()
+    
     # Check if user exists
     db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
     if not db_user:

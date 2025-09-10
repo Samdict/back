@@ -3,10 +3,13 @@ from datetime import datetime
 from typing import Optional, List
 
 class UserCreate(BaseModel):
-    user_id: str
+    name: str
+    reg_no: str
 
 class UserResponse(BaseModel):
     user_id: str
+    name: str
+    reg_no: str
     created_at: datetime
     
     class Config:

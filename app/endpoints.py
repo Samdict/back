@@ -94,7 +94,9 @@ async def create_enrollment(
             )
         
         # Validate audio length using librosa
-        audio, sr = librosa.load(io.BytesIO(content), sr=16000)
+        from .voice_utils import voice_processor
+        converted_bytes = await voice_processor.convert_audio_format(content)
+        audio, sr = librosa.load(io.BytesIO(converted_bytes), sr=16000)
         audio_duration = len(audio) / sr
         
         if audio_duration > MAX_AUDIO_LENGTH:

@@ -11,9 +11,11 @@ from functools import lru_cache
 import os
 from sklearn.metrics.pairwise import cosine_similarity
 import warnings
-import soundfile as sf
-import tempfile
 warnings.filterwarnings("ignore")
+
+# Add these imports for audio format conversion
+from pydub import AudioSegment
+import tempfile
 
 try:
     from resemblyzer import VoiceEncoder, preprocess_wav
@@ -42,6 +44,33 @@ class VoiceProcessor:
         """Generate hash for audio bytes for caching"""
         return hashlib.md5(audio_bytes).hexdigest()
     
+    async def convert_audio_format(self, audio_bytes: bytes):
+        """Convert audio to WAV format if it's not already"""
+        try:
+            # Try to load with librosa first
+            audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=self.sample_rate)
+            return audio_bytes  # Return original if it works
+        except:
+            # If librosa can't read it, convert to WAV
+            try:
+                # Create a temporary file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as tmp:
+                    tmp.write(audio_bytes)
+                    tmp_path = tmp.name
+                
+                # Convert to WAV using pydub
+                audio = AudioSegment.from_file(tmp_path)
+                wav_io = io.BytesIO()
+                audio.export(wav_io, format="wav")
+                wav_bytes = wav_io.getvalue()
+                
+                # Clean up
+                os.unlink(tmp_path)
+                
+                return wav_bytes
+            except Exception as e:
+                raise Exception(f"Audio conversion failed: {str(e)}")
+    
     async def reduce_noise(self, audio):
         """Apply noise reduction to audio"""
         try:
@@ -59,86 +88,20 @@ class VoiceProcessor:
             print(f"Noise reduction failed: {e}")
             return audio  # Return original audio if noise reduction fails
     
-    def _load_audio_from_bytes(self, audio_bytes: bytes):
-        """Load audio from bytes with multiple fallback methods"""
-        try:
-            # Method 1: Try using soundfile first (more reliable for format detection)
-            try:
-                audio, sr = sf.read(io.BytesIO(audio_bytes))
-                # Convert to mono if stereo
-                if len(audio.shape) > 1:
-                    audio = np.mean(audio, axis=1)
-                # Resample if necessary
-                if sr != self.sample_rate:
-                    audio = librosa.resample(audio, orig_sr=sr, target_sr=self.sample_rate)
-                return audio
-            except Exception as sf_error:
-                print(f"Soundfile failed: {sf_error}")
-        
-            # Method 2: Try librosa with BytesIO
-            try:
-                audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=self.sample_rate)
-                return audio
-            except Exception as librosa_error:
-                print(f"Librosa BytesIO failed: {librosa_error}")
-            
-            # Method 3: Write to temporary file and load (most compatible)
-            try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
-                    temp_file.write(audio_bytes)
-                    temp_file.flush()
-                    
-                    try:
-                        audio, _ = librosa.load(temp_file.name, sr=self.sample_rate)
-                        return audio
-                    finally:
-                        # Clean up temp file
-                        try:
-                            os.unlink(temp_file.name)
-                        except:
-                            pass
-            except Exception as temp_error:
-                print(f"Temporary file method failed: {temp_error}")
-            
-            # Method 4: Try different audio format assumptions
-            formats_to_try = ['.wav', '.mp3', '.m4a', '.ogg', '.webm', '.flac']
-            for fmt in formats_to_try:
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=fmt) as temp_file:
-                        temp_file.write(audio_bytes)
-                        temp_file.flush()
-                        
-                        try:
-                            audio, _ = librosa.load(temp_file.name, sr=self.sample_rate)
-                            return audio
-                        finally:
-                            try:
-                                os.unlink(temp_file.name)
-                            except:
-                                pass
-                except:
-                    continue
-            
-            raise Exception("All audio loading methods failed")
-            
-        except Exception as e:
-            raise Exception(f"Could not load audio: {str(e)}")
-    
     async def process_audio_bytes(self, audio_bytes: bytes):
-        """Process audio from bytes and return embedding - optimized version"""
+        """Process audio from bytes and return embedding"""
         try:
             # Generate cache key
             cache_key = self._get_audio_hash(audio_bytes)
             
             if cache_key in self._cache:
                 return self._cache[cache_key]
+                
+            # Convert audio to a format librosa can read if needed
+            converted_bytes = await self.convert_audio_format(audio_bytes)
             
-            # Load audio using the robust method
-            audio = self._load_audio_from_bytes(audio_bytes)
-            
-            # Validate audio
-            if len(audio) == 0:
-                raise Exception("Audio file is empty or corrupted")
+            # Load audio from bytes
+            audio, _ = librosa.load(io.BytesIO(converted_bytes), sr=self.sample_rate)
             
             # Apply noise reduction to all audio files
             audio = await self.reduce_noise(audio)
@@ -147,7 +110,7 @@ class VoiceProcessor:
                 # Use resemblyzer if available
                 embedding = self.encoder.embed_utterance(audio)
             else:
-                # Use enhanced features (not simplified) for better accuracy
+                # Use enhanced features for better accuracy
                 embedding = await self.extract_enhanced_features(audio)
             
             # Cache the result
@@ -184,7 +147,7 @@ class VoiceProcessor:
         
         tonnetz_stats = np.concatenate((
             np.mean(tonnetz, axis=1),
-            np.std(tonnetz, axis=1)
+            std(tonnetz, axis=1)
         ))
         
         # Combine all features into a single embedding

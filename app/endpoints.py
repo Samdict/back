@@ -6,6 +6,7 @@ from datetime import datetime
 import numpy as np
 import aiofiles 
 import re
+import librosa
 
 from . import models, schemas, voice_utils
 from .database import get_db
@@ -79,14 +80,6 @@ async def create_enrollment(
             detail="File must be an audio file"
         )
     
-    # Validate audio length
-    audio_info = librosa.load(file_path, sr=16000)
-    if len(audio_info[0]) / audio_info[1] > MAX_AUDIO_LENGTH:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Audio too long. Maximum {MAX_AUDIO_LENGTH} seconds allowed."
-        )
-    
     # Initialize file_path variable to handle cleanup in case of error
     file_path = None
     
@@ -96,6 +89,16 @@ async def create_enrollment(
         async with aiofiles.open(file_path, "wb") as f:
             content = await audio_file.read()
             await f.write(content)
+        
+        # Validate audio length after saving the file
+        audio, sr = librosa.load(file_path, sr=16000)
+        audio_duration = len(audio) / sr
+        
+        if audio_duration > MAX_AUDIO_LENGTH:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Audio too long. Maximum {MAX_AUDIO_LENGTH} seconds allowed. Your audio is {audio_duration:.2f} seconds."
+            )
         
         # Process audio to get embedding
         embedding = await voice_utils.voice_processor.process_audio_file(file_path)
@@ -119,6 +122,9 @@ async def create_enrollment(
         
         return db_enrollment
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
         # Clean up temporary file if it exists
         if file_path and os.path.exists(file_path):

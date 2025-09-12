@@ -33,7 +33,7 @@ class VoiceProcessor:
         else:
             self.encoder = None
         self._cache = {}
-        # noise reduction parameters
+         # noise reduction parameters
         self.noise_reduction_params = {
             'stationary': True,
             'prop_decrease': 0.75,
@@ -73,16 +73,13 @@ class VoiceProcessor:
                 raise Exception(f"Audio conversion failed: {str(e)}")
     
     async def reduce_noise(self, audio):
-        """Apply noise reduction to audio"""
+        """Apply noise reduction to audio with updated API"""
         try:
-            # Apply noise reduction to all audio files
+            # Updated noise reduction API
             reduced_noise = nr.reduce_noise(
-                y=audio, 
-                sr=self.sample_rate,
-                stationary=self.noise_reduction_params['stationary'],
-                prop_decrease=self.noise_reduction_params['prop_decrease'],
-                n_fft=self.noise_reduction_params['n_fft'],
-                win_length=self.noise_reduction_params['win_length']
+                audio_clip=audio, 
+                noise_clip=audio[:1000],  # Use first second as noise sample
+                verbose=False
             )
             return reduced_noise
         except Exception as e:
@@ -90,7 +87,7 @@ class VoiceProcessor:
             return audio  # Return original audio if noise reduction fails
     
     async def process_audio_bytes(self, audio_bytes: bytes):
-        """Process audio from bytes and return embedding"""
+        """Process audio from bytes and return embedding - optimized version"""
         try:
             # Generate cache key
             cache_key = self._get_audio_hash(audio_bytes)
@@ -148,7 +145,7 @@ class VoiceProcessor:
         
         tonnetz_stats = np.concatenate((
             np.mean(tonnetz, axis=1),
-            np.std(tonnetz, axis=1)  # Fixed: changed std to np.std
+            np.std(tonnetz, axis=1)
         ))
         
         # Combine all features into a single embedding

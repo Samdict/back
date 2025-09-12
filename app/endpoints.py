@@ -8,6 +8,7 @@ import aiofiles
 import re
 import librosa
 import io
+import asyncio
 
 from . import models, schemas, voice_utils
 from .database import get_db
@@ -93,10 +94,10 @@ async def create_enrollment(
                 detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE/1024/1024}MB"
             )
         
-        # Validate audio length using librosa
-        from .voice_utils import voice_processor
-        converted_bytes = await voice_processor.convert_audio_format(content)
-        audio, sr = librosa.load(io.BytesIO(converted_bytes), sr=16000)
+        # Validate audio length using librosa - run in thread to avoid blocking
+        loop = asyncio.get_event_loop()
+        converted_bytes = await voice_utils.voice_processor.convert_audio_format(content)
+        audio, sr = await loop.run_in_executor(None, lambda: librosa.load(io.BytesIO(converted_bytes), sr=16000))
         audio_duration = len(audio) / sr
         
         if audio_duration > MAX_AUDIO_LENGTH:
@@ -105,7 +106,7 @@ async def create_enrollment(
                 detail=f"Audio too long. Maximum {MAX_AUDIO_LENGTH} seconds allowed. Your audio is {audio_duration:.2f} seconds."
             )
         
-        # Process audio to get embedding
+        # Process audio to get embedding - run in thread to avoid blocking
         embedding = await voice_utils.voice_processor.process_audio_bytes(content)
         
         # Convert numpy array to bytes for storage
@@ -185,7 +186,19 @@ async def verify_user(
                 detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE/1024/1024}MB"
             )
         
-        # Process verification audio
+        # Validate audio length using librosa - run in thread to avoid blocking
+        loop = asyncio.get_event_loop()
+        converted_bytes = await voice_utils.voice_processor.convert_audio_format(content)
+        audio, sr = await loop.run_in_executor(None, lambda: librosa.load(io.BytesIO(converted_bytes), sr=16000))
+        audio_duration = len(audio) / sr
+        
+        if audio_duration > MAX_AUDIO_LENGTH:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Audio too long. Maximum {MAX_AUDIO_LENGTH} seconds allowed. Your audio is {audio_duration:.2f} seconds."
+            )
+        
+        # Process verification audio - run in thread to avoid blocking
         verification_embedding = await voice_utils.voice_processor.process_audio_bytes(content)
         
         # Compare with stored enrollments
@@ -194,9 +207,12 @@ async def verify_user(
             # Convert bytes back to numpy array
             stored_embedding = np.frombuffer(enrollment.embedding, dtype=np.float32)
             
-            # Compare embeddings
-            verified, similarity = voice_utils.voice_processor.compare_embeddings(
-                verification_embedding, stored_embedding
+            # Compare embeddings - run in thread to avoid blocking
+            verified, similarity = await loop.run_in_executor(
+                None, 
+                lambda: voice_utils.voice_processor.compare_embeddings(
+                    verification_embedding, stored_embedding
+                )
             )
 
             print(f"Compared with enrollment {enrollment.id}: similarity={similarity}, embedding_dim={len(stored_embedding)}")

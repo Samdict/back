@@ -11,6 +11,7 @@ from . import models, schemas, voice_utils
 from .database import get_db
 
 router = APIRouter()
+MAX_AUDIO_LENGTH = 10  # seconds
 
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads", exist_ok=True)
@@ -76,6 +77,14 @@ async def create_enrollment(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File must be an audio file"
+        )
+    
+    # Validate audio length
+    audio_info = librosa.load(file_path, sr=16000)
+    if len(audio_info[0]) / audio_info[1] > MAX_AUDIO_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Audio too long. Maximum {MAX_AUDIO_LENGTH} seconds allowed."
         )
     
     # Initialize file_path variable to handle cleanup in case of error

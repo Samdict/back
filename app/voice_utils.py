@@ -1,7 +1,8 @@
 import numpy as np
 if not hasattr(np, 'bool'):
     np.bool = bool
-
+import noisereduce as nr
+from scipy import signal
 import librosa
 import io
 import aiofiles
@@ -27,6 +28,13 @@ class VoiceProcessor:
         else:
             self.encoder = None
         self._cache = {}
+        # noise reduction parameters
+        self.noise_reduction_params = {
+            'stationary': True,
+            'prop_decrease': 0.75,
+            'n_fft': 512,
+            'win_length': 512
+        }
     
     def _get_audio_hash(self, file_path: str):
         """Generate hash for audio file for caching"""
@@ -36,31 +44,48 @@ class VoiceProcessor:
         except:
             return str(os.path.getmtime(file_path))
     
-    async def process_audio_file(self, file_path: str):
-        """Process audio file and return embedding with caching"""
+    async def reduce_noise(self, audio):
+        """Apply noise reduction to audio"""
         try:
-            # Generate cache key
+            # Apply noise reduction
+            reduced_noise = nr.reduce_noise(
+                y=audio, 
+                sr=self.sample_rate,
+                stationary=self.noise_reduction_params['stationary'],
+                prop_decrease=self.noise_reduction_params['prop_decrease'],
+                n_fft=self.noise_reduction_params['n_fft'],
+                win_length=self.noise_reduction_params['win_length']
+            )
+            return reduced_noise
+        except Exception as e:
+            print(f"Noise reduction failed: {e}")
+            return audio  # Return original audio if noise reduction fails
+    
+    async def process_audio_file(self, file_path: str):
+        """Process audio file with noise reduction"""
+        try:
             cache_key = self._get_audio_hash(file_path)
-            
             if cache_key in self._cache:
                 return self._cache[cache_key]
                 
+            # Load audio
+            audio, _ = librosa.load(file_path, sr=self.sample_rate)
+            
+            # Apply noise reduction
+            audio = await self.reduce_noise(audio)
+            
             if RESEMBLYZER_AVAILABLE:
-                # Use resemblyzer if available
-                wav = preprocess_wav(file_path)
-                embedding = self.encoder.embed_utterance(wav)
+                # Use resemblyzer
+                embedding = self.encoder.embed_utterance(audio)
             else:
-                # Fallback to enhanced MFCC features
-                audio, _ = librosa.load(file_path, sr=self.sample_rate)
+                # Fallback to enhanced features
                 embedding = await self.extract_enhanced_features(audio)
             
-            # Cache the result
             self._cache[cache_key] = embedding.astype(np.float32)
-            
             return embedding.astype(np.float32)
         except Exception as e:
             raise Exception(f"Error processing audio: {str(e)}")
-        
+                
     async def process_audio_bytes(self, audio_bytes: bytes):
         """Process audio from bytes and return embedding"""
         try:

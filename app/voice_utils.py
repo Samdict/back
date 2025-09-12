@@ -1,3 +1,4 @@
+# voice_utils.py
 import numpy as np
 if not hasattr(np, 'bool'):
     np.bool = bool
@@ -147,7 +148,7 @@ class VoiceProcessor:
         
         tonnetz_stats = np.concatenate((
             np.mean(tonnetz, axis=1),
-            std(tonnetz, axis=1)
+            np.std(tonnetz, axis=1)  # Fixed: changed std to np.std
         ))
         
         # Combine all features into a single embedding

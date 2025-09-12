@@ -36,18 +36,14 @@ class VoiceProcessor:
             'win_length': 512
         }
     
-    def _get_audio_hash(self, file_path: str):
-        """Generate hash for audio file for caching"""
-        try:
-            with open(file_path, 'rb') as f:
-                return hashlib.md5(f.read()).hexdigest()
-        except:
-            return str(os.path.getmtime(file_path))
+    def _get_audio_hash(self, audio_bytes: bytes):
+        """Generate hash for audio bytes for caching"""
+        return hashlib.md5(audio_bytes).hexdigest()
     
     async def reduce_noise(self, audio):
         """Apply noise reduction to audio"""
         try:
-            # Apply noise reduction
+            # Apply noise reduction to all audio files
             reduced_noise = nr.reduce_noise(
                 y=audio, 
                 sr=self.sample_rate,
@@ -61,50 +57,37 @@ class VoiceProcessor:
             print(f"Noise reduction failed: {e}")
             return audio  # Return original audio if noise reduction fails
     
-    async def process_audio_file(self, file_path: str):
-        """Process audio file with noise reduction"""
+    async def process_audio_bytes(self, audio_bytes: bytes):
+        """Process audio from bytes and return embedding - optimized version"""
         try:
-            cache_key = self._get_audio_hash(file_path)
+            # Generate cache key
+            cache_key = self._get_audio_hash(audio_bytes)
+            
             if cache_key in self._cache:
                 return self._cache[cache_key]
                 
-            # Load audio
-            audio, _ = librosa.load(file_path, sr=self.sample_rate)
-            
-            # Apply noise reduction
-            audio = await self.reduce_noise(audio)
-            
-            if RESEMBLYZER_AVAILABLE:
-                # Use resemblyzer
-                embedding = self.encoder.embed_utterance(audio)
-            else:
-                # Fallback to enhanced features
-                embedding = await self.extract_enhanced_features(audio)
-            
-            self._cache[cache_key] = embedding.astype(np.float32)
-            return embedding.astype(np.float32)
-        except Exception as e:
-            raise Exception(f"Error processing audio: {str(e)}")
-                
-    async def process_audio_bytes(self, audio_bytes: bytes):
-        """Process audio from bytes and return embedding"""
-        try:
             # Load audio from bytes
             audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=self.sample_rate)
+            
+            # Apply noise reduction to all audio files
+            audio = await self.reduce_noise(audio)
             
             if RESEMBLYZER_AVAILABLE:
                 # Use resemblyzer if available
                 embedding = self.encoder.embed_utterance(audio)
             else:
-                # Fallback to enhanced MFCC features
+                # Use enhanced features (not simplified) for better accuracy
                 embedding = await self.extract_enhanced_features(audio)
+            
+            # Cache the result
+            self._cache[cache_key] = embedding.astype(np.float32)
             
             return embedding.astype(np.float32)
         except Exception as e:
             raise Exception(f"Error processing audio bytes: {str(e)}")
     
     async def extract_enhanced_features(self, audio):
-        """Extract multiple audio features as fallback when resemblyzer is not available"""
+        """Extract multiple audio features for better speaker discrimination"""
         # Extract multiple features for better speaker discrimination
         mfccs = librosa.feature.mfcc(y=audio, sr=self.sample_rate, n_mfcc=40)
         chroma = librosa.feature.chroma_stft(y=audio, sr=self.sample_rate)
@@ -144,7 +127,7 @@ class VoiceProcessor:
             # Resemblyzer embeddings are 256-dimensional
             return "resemblyzer" if len(embedding) == 256 else "fallback"
         else:
-            # Fallback embeddings are 170-dimensional
+            # Enhanced fallback embeddings are 170-dimensional
             return "fallback" if len(embedding) == 170 else "unknown"
     
     def compare_embeddings(self, embedding1, embedding2, threshold=0.75):

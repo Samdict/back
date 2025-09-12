@@ -7,12 +7,14 @@ import numpy as np
 import aiofiles 
 import re
 import librosa
+import io
 
 from . import models, schemas, voice_utils
 from .database import get_db
 
 router = APIRouter()
 MAX_AUDIO_LENGTH = 10  # seconds
+MAX_AUDIO_SIZE = 5 * 1024 * 1024  # 5MB
 
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads", exist_ok=True)
@@ -80,18 +82,19 @@ async def create_enrollment(
             detail="File must be an audio file"
         )
     
-    # Initialize file_path variable to handle cleanup in case of error
-    file_path = None
-    
     try:
-        # Save uploaded file temporarily
-        file_path = f"uploads/{uuid.uuid4()}_{audio_file.filename}"
-        async with aiofiles.open(file_path, "wb") as f:
-            content = await audio_file.read()
-            await f.write(content)
+        # Read audio content directly into memory
+        content = await audio_file.read()
         
-        # Validate audio length after saving the file
-        audio, sr = librosa.load(file_path, sr=16000)
+        # Validate audio size
+        if len(content) > MAX_AUDIO_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE/1024/1024}MB"
+            )
+        
+        # Validate audio length using librosa
+        audio, sr = librosa.load(io.BytesIO(content), sr=16000)
         audio_duration = len(audio) / sr
         
         if audio_duration > MAX_AUDIO_LENGTH:
@@ -101,7 +104,7 @@ async def create_enrollment(
             )
         
         # Process audio to get embedding
-        embedding = await voice_utils.voice_processor.process_audio_file(file_path)
+        embedding = await voice_utils.voice_processor.process_audio_bytes(content)
         
         # Convert numpy array to bytes for storage
         embedding_bytes = embedding.tobytes()
@@ -116,19 +119,12 @@ async def create_enrollment(
         db.commit()
         db.refresh(db_enrollment)
         
-        # Clean up temporary file
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        
         return db_enrollment
         
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        # Clean up temporary file if it exists
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing enrollment: {str(e)}"
@@ -176,18 +172,19 @@ async def verify_user(
                 detail="File must be an audio file"
             )
     
-    # Initialize file_path variable to handle cleanup in case of error
-    file_path = None
-    
     try:
-        # Save uploaded file temporarily
-        file_path = f"uploads/{uuid.uuid4()}_{audio_file.filename}"
-        async with aiofiles.open(file_path, "wb") as f:
-            content = await audio_file.read()
-            await f.write(content)
+        # Read audio content directly into memory
+        content = await audio_file.read()
+        
+        # Validate audio size
+        if len(content) > MAX_AUDIO_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE/1024/1024}MB"
+            )
         
         # Process verification audio
-        verification_embedding = await voice_utils.voice_processor.process_audio_file(file_path)
+        verification_embedding = await voice_utils.voice_processor.process_audio_bytes(content)
         
         # Compare with stored enrollments
         best_similarity = 0
@@ -205,10 +202,6 @@ async def verify_user(
             if similarity > best_similarity:
                 best_similarity = similarity
         
-        # Clean up temporary file
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        
         # Determine verification result
         # Use a higher threshold for Resemblyzer (0.75), lower for fallback (0.7)
         threshold = 0.75 if voice_utils.voice_processor.detect_embedding_type(verification_embedding) == "resemblyzer" else 0.7
@@ -222,10 +215,10 @@ async def verify_user(
             "message": "Verification successful" if verified else "Verification failed"
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
-        # Clean up temporary file if it exists
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
         print(f"Error in verification: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -17,13 +17,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Preload voice processor model
+# Preload voice processor model - optimized
 @app.on_event("startup")
 async def startup_event():
-    print("Preloading voice processor model...")
-    # Initialize the encoder without processing dummy audio
+    print("Initializing voice processor...")
+    # Just initialize the encoder without processing dummy audio
     if hasattr(voice_processor, 'encoder') and voice_processor.encoder:
-        print("Model loaded successfully")
+        print("Voice encoder loaded successfully")
+    else:
+        print("Using fallback MFCC features")
 
 # Add CORS middleware
 app.add_middleware(

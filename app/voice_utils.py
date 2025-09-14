@@ -77,15 +77,18 @@ class VoiceProcessor:
         try:
             # Updated noise reduction API
             reduced_noise = nr.reduce_noise(
-                audio_clip=audio, 
-                noise_clip=audio[:1000],  # Use first second as noise sample
-                verbose=False
+                y=audio,
+                sr=self.sample_rate,
+                stationary=self.noise_reduction_params['stationary'],
+                prop_decrease=self.noise_reduction_params['prop_decrease'],
+                n_fft=self.noise_reduction_params['n_fft'],
+                win_length=self.noise_reduction_params['win_length']
             )
             return reduced_noise
         except Exception as e:
             print(f"Noise reduction failed: {e}")
             return audio  # Return original audio if noise reduction fails
-    
+
     async def process_audio_bytes(self, audio_bytes: bytes):
         """Process audio from bytes and return embedding - optimized version"""
         try:

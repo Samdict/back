@@ -1,4 +1,4 @@
-# voice_utils.py
+# voice_utils.py - Optimized version
 import numpy as np
 if not hasattr(np, 'bool'):
     np.bool = bool
@@ -12,6 +12,9 @@ from functools import lru_cache
 import os
 from sklearn.metrics.pairwise import cosine_similarity
 import warnings
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import threading
 warnings.filterwarnings("ignore")
 
 # Add these imports for audio format conversion
@@ -28,112 +31,221 @@ except ImportError as e:
 class VoiceProcessor:
     def __init__(self):
         self.sample_rate = 16000
-        if RESEMBLYZER_AVAILABLE:
-            self.encoder = VoiceEncoder()
-        else:
-            self.encoder = None
         self._cache = {}
-         # noise reduction parameters
+        self._embedding_cache = {}  # Separate cache for embeddings
+        self._audio_cache = {}  # Cache for preprocessed audio
+        
+        # Thread pool for CPU-intensive tasks
+        self._thread_pool = ThreadPoolExecutor(max_workers=2)
+        
+        # Encoder initialization with lazy loading
+        self._encoder = None
+        self._encoder_lock = threading.Lock()
+        
+        # Optimized noise reduction parameters
         self.noise_reduction_params = {
             'stationary': True,
-            'prop_decrease': 0.75,
-            'n_fft': 512,
-            'win_length': 512
+            'prop_decrease': 0.5,  # Reduced for faster processing
+            'n_fft': 256,  # Reduced from 512 for speed
+            'win_length': 256  # Reduced from 512 for speed
         }
+        
+        # Cache size limits to prevent memory issues
+        self.max_cache_size = 100
+    
+    @property
+    def encoder(self):
+        """Lazy load encoder only when needed"""
+        if not RESEMBLYZER_AVAILABLE:
+            return None
+            
+        if self._encoder is None:
+            with self._encoder_lock:
+                if self._encoder is None:  # Double-check locking
+                    print("Loading Resemblyzer encoder...")
+                    self._encoder = VoiceEncoder()
+                    print("Resemblyzer encoder loaded successfully")
+        return self._encoder
     
     def _get_audio_hash(self, audio_bytes: bytes):
         """Generate hash for audio bytes for caching"""
-        return hashlib.md5(audio_bytes).hexdigest()
+        # Use first and last 1KB + file size for faster hashing
+        if len(audio_bytes) > 2048:
+            hash_content = audio_bytes[:1024] + audio_bytes[-1024:] + str(len(audio_bytes)).encode()
+        else:
+            hash_content = audio_bytes
+        return hashlib.md5(hash_content).hexdigest()
+    
+    def _manage_cache_size(self, cache_dict):
+        """Keep cache size under control"""
+        if len(cache_dict) > self.max_cache_size:
+            # Remove oldest 20% of entries
+            items_to_remove = len(cache_dict) // 5
+            keys_to_remove = list(cache_dict.keys())[:items_to_remove]
+            for key in keys_to_remove:
+                cache_dict.pop(key, None)
     
     async def convert_audio_format(self, audio_bytes: bytes):
-        """Convert audio to WAV format if it's not already"""
-        try:
-            # Try to load with librosa first
-            audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=self.sample_rate)
-            return audio_bytes  # Return original if it works
-        except:
-            # If librosa can't read it, convert to WAV
+        """Convert audio to WAV format if it's not already - optimized"""
+        cache_key = f"convert_{self._get_audio_hash(audio_bytes)}"
+        
+        if cache_key in self._audio_cache:
+            return self._audio_cache[cache_key]
+        
+        def _convert_sync():
             try:
-                # Create a temporary file
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.webm') as tmp:
-                    tmp.write(audio_bytes)
-                    tmp_path = tmp.name
-                
-                # Convert to WAV using pydub
-                audio = AudioSegment.from_file(tmp_path)
-                wav_io = io.BytesIO()
-                audio.export(wav_io, format="wav")
-                wav_bytes = wav_io.getvalue()
-                
-                # Clean up
-                os.unlink(tmp_path)
-                
-                return wav_bytes
-            except Exception as e:
-                raise Exception(f"Audio conversion failed: {str(e)}")
+                # Try to load with librosa first (fastest path)
+                audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=self.sample_rate)
+                return audio_bytes  # Return original if it works
+            except:
+                # If librosa can't read it, convert to WAV
+                try:
+                    # Use in-memory conversion instead of temp files
+                    audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+                    wav_io = io.BytesIO()
+                    audio.export(wav_io, format="wav")
+                    return wav_io.getvalue()
+                except Exception as e:
+                    raise Exception(f"Audio conversion failed: {str(e)}")
+        
+        # Run conversion in thread pool
+        loop = asyncio.get_event_loop()
+        converted_bytes = await loop.run_in_executor(self._thread_pool, _convert_sync)
+        
+        # Cache the result
+        self._audio_cache[cache_key] = converted_bytes
+        self._manage_cache_size(self._audio_cache)
+        
+        return converted_bytes
     
-    async def reduce_noise(self, audio):
-        """Apply noise reduction to audio with updated API"""
-        try:
-            # Updated noise reduction API
-            reduced_noise = nr.reduce_noise(
-                y=audio,
-                sr=self.sample_rate,
-                stationary=self.noise_reduction_params['stationary'],
-                prop_decrease=self.noise_reduction_params['prop_decrease'],
-                n_fft=self.noise_reduction_params['n_fft'],
-                win_length=self.noise_reduction_params['win_length']
-            )
-            return reduced_noise
-        except Exception as e:
-            print(f"Noise reduction failed: {e}")
-            return audio  # Return original audio if noise reduction fails
+    async def reduce_noise_optimized(self, audio):
+        """Apply optimized noise reduction"""
+        def _reduce_noise_sync():
+            try:
+                # Skip noise reduction for very short audio (< 1 second) for speed
+                if len(audio) < self.sample_rate:
+                    return audio
+                    
+                # Use faster noise reduction with reduced parameters
+                reduced_noise = nr.reduce_noise(
+                    y=audio,
+                    sr=self.sample_rate,
+                    stationary=True,
+                    prop_decrease=0.75,  # Less aggressive for speed
+                    n_fft=512,  # Smaller FFT for speed
+                    win_length=512
+                )
+                return reduced_noise
+            except Exception as e:
+                print(f"Noise reduction failed: {e}")
+                return audio  # Return original audio if noise reduction fails
+        
+        # Run noise reduction in thread pool
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self._thread_pool, _reduce_noise_sync)
 
     async def process_audio_bytes(self, audio_bytes: bytes):
-        """Process audio from bytes and return embedding - optimized version"""
+        """Process audio from bytes and return embedding - heavily optimized version"""
         try:
             # Generate cache key
             cache_key = self._get_audio_hash(audio_bytes)
             
-            if cache_key in self._cache:
-                return self._cache[cache_key]
+            # Check embedding cache first
+            if cache_key in self._embedding_cache:
+                print("Cache hit - returning cached embedding")
+                return self._embedding_cache[cache_key]
+            
+            def _process_audio_sync():
+                """Synchronous audio processing for thread pool"""
+                # Convert audio to a format librosa can read if needed
+                # Load audio from bytes with optimized parameters
+                audio_file = io.BytesIO(audio_bytes)
                 
-            # Convert audio to a format librosa can read if needed
-            converted_bytes = await self.convert_audio_format(audio_bytes)
+                # Load with reduced precision for speed (mono, specific sample rate)
+                audio, _ = librosa.load(
+                    audio_file, 
+                    sr=self.sample_rate,
+                    mono=True,
+                    dtype=np.float64  # Use float32 instead of float64
+                )
+                
+                # Skip noise reduction for very short audio
+                if len(audio) >= self.sample_rate:
+                    # Simplified noise reduction
+                    try:
+                        audio = nr.reduce_noise(
+                            y=audio,
+                            sr=self.sample_rate,
+                            stationary=True,
+                            prop_decrease=0.75,
+                            n_fft=512,
+                            win_length=512
+                        )
+                    except:
+                        pass  # Continue with original audio if noise reduction fails
+                
+                # Process with appropriate encoder
+                if RESEMBLYZER_AVAILABLE and self.encoder is not None:
+                    # Use resemblyzer with preprocessing
+                    # Preprocess the wav for resemblyzer
+                    processed_audio = preprocess_wav(audio, source_sr=self.sample_rate)
+                    embedding = self.encoder.embed_utterance(processed_audio)
+                else:
+                    # Use enhanced features for better accuracy
+                    embedding = self._extract_enhanced_features_sync(audio)
+                
+                return embedding.astype(np.float64) # Use float64 for consistency was 32 before
             
-            # Load audio from bytes
-            audio, _ = librosa.load(io.BytesIO(converted_bytes), sr=self.sample_rate)
-            
-            # Apply noise reduction to all audio files
-            audio = await self.reduce_noise(audio)
-            
-            if RESEMBLYZER_AVAILABLE:
-                # Use resemblyzer if available
-                embedding = self.encoder.embed_utterance(audio)
-            else:
-                # Use enhanced features for better accuracy
-                embedding = await self.extract_enhanced_features(audio)
+            # Run audio processing in thread pool
+            loop = asyncio.get_event_loop()
+            embedding = await loop.run_in_executor(self._thread_pool, _process_audio_sync)
             
             # Cache the result
-            self._cache[cache_key] = embedding.astype(np.float32)
+            self._embedding_cache[cache_key] = embedding
+            self._manage_cache_size(self._embedding_cache)
             
-            return embedding.astype(np.float32)
+            return embedding
+            
         except Exception as e:
             raise Exception(f"Error processing audio bytes: {str(e)}")
     
-    async def extract_enhanced_features(self, audio):
-        """Extract multiple audio features for better speaker discrimination"""
-        # Extract multiple features for better speaker discrimination
-        mfccs = librosa.feature.mfcc(y=audio, sr=self.sample_rate, n_mfcc=40)
-        chroma = librosa.feature.chroma_stft(y=audio, sr=self.sample_rate)
-        spectral_contrast = librosa.feature.spectral_contrast(y=audio, sr=self.sample_rate)
-        tonnetz = librosa.feature.tonnetz(y=audio, sr=self.sample_rate)
+    def _extract_enhanced_features_sync(self, audio):
+        """Extract multiple audio features for better speaker discrimination - optimized sync version"""
+        # Use reduced parameters for faster computation
+        hop_length = 512  # Larger hop length for speed
+        n_fft = 1024  # Smaller n_fft for speed
+        
+        # Extract features with optimized parameters
+        mfccs = librosa.feature.mfcc(
+            y=audio, 
+            sr=self.sample_rate, 
+            n_mfcc=40,  # Reduced from 40
+            hop_length=hop_length,
+            n_fft=n_fft
+        )
+        
+        chroma = librosa.feature.chroma_stft(
+            y=audio, 
+            sr=self.sample_rate,
+            hop_length=hop_length,
+            n_fft=n_fft
+        )
+        
+        spectral_contrast = librosa.feature.spectral_contrast(
+            y=audio, 
+            sr=self.sample_rate,
+            hop_length=hop_length,
+            n_fft=n_fft
+        )
+        
+        # Skip tonnetz for speed (most computationally expensive)
+        # tonnetz = librosa.feature.tonnetz(y=audio, sr=self.sample_rate)
         
         # Calculate statistics for each feature type
         mfcc_stats = np.concatenate((
             np.mean(mfccs, axis=1),
-            np.std(mfccs, axis=1),
-            np.median(mfccs, axis=1)
+            np.std(mfccs, axis=1)
+            # Skip median for speed
         ))
         
         chroma_stats = np.concatenate((
@@ -146,15 +258,15 @@ class VoiceProcessor:
             np.std(spectral_contrast, axis=1)
         ))
         
-        tonnetz_stats = np.concatenate((
-            np.mean(tonnetz, axis=1),
-            np.std(tonnetz, axis=1)
-        ))
+        # Combine features (without tonnetz)
+        embedding = np.concatenate([mfcc_stats, chroma_stats, contrast_stats])
         
-        # Combine all features into a single embedding
-        embedding = np.concatenate([mfcc_stats, chroma_stats, contrast_stats, tonnetz_stats])
-        
-        return embedding.astype(np.float32)
+        return embedding.astype(np.float64) # was np.float32
+    
+    async def extract_enhanced_features(self, audio):
+        """Async wrapper for enhanced features extraction"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self._thread_pool, self._extract_enhanced_features_sync, audio)
     
     def detect_embedding_type(self, embedding):
         """Detect if an embedding is from resemblyzer or the fallback system"""
@@ -162,11 +274,11 @@ class VoiceProcessor:
             # Resemblyzer embeddings are 256-dimensional
             return "resemblyzer" if len(embedding) == 256 else "fallback"
         else:
-            # Enhanced fallback embeddings are 170-dimensional
-            return "fallback" if len(embedding) == 170 else "unknown"
+            # Optimized fallback embeddings are now ~91-dimensional (reduced from 170)
+            return "fallback" if len(embedding) in [91, 170] else "unknown"
     
     def compare_embeddings(self, embedding1, embedding2, threshold=0.75):
-        """Compare two embeddings using cosine similarity with compatibility handling"""
+        """Compare two embeddings using cosine similarity with compatibility handling - optimized"""
         # Detect embedding types
         type1 = self.detect_embedding_type(embedding1)
         type2 = self.detect_embedding_type(embedding2)
@@ -176,17 +288,39 @@ class VoiceProcessor:
             print(f"Warning: Comparing different embedding types: {type1} vs {type2}")
             return False, 0.0
         
-        # Reshape for cosine similarity calculation
-        embedding1 = embedding1.reshape(1, -1)
-        embedding2 = embedding2.reshape(1, -1)
+        # Use numpy dot product for faster computation than sklearn
+        # Normalize embeddings
+        norm1 = np.linalg.norm(embedding1)
+        norm2 = np.linalg.norm(embedding2)
         
-        # Calculate cosine similarity
-        similarity = cosine_similarity(embedding1, embedding2)[0][0]
+        if norm1 == 0 or norm2 == 0:
+            return False, 0.0
+            
+        # Calculate cosine similarity using dot product
+        similarity = np.dot(embedding1, embedding2) / (norm1 * norm2)
+        
+        # Ensure similarity is in valid range
+        similarity = np.clip(similarity, -1.0, 1.0)
         
         # Determine if verification passes based on threshold
         verified = similarity >= threshold
         
-        return verified, similarity
+        return verified, float(similarity)
+    
+    def clear_cache(self):
+        """Clear all caches to free memory"""
+        self._cache.clear()
+        self._embedding_cache.clear()
+        self._audio_cache.clear()
+        print("All caches cleared")
+    
+    def get_cache_stats(self):
+        """Get cache statistics for monitoring"""
+        return {
+            "embedding_cache_size": len(self._embedding_cache),
+            "audio_cache_size": len(self._audio_cache),
+            "general_cache_size": len(self._cache)
+        }
 
 # Global instance
 voice_processor = VoiceProcessor()

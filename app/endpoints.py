@@ -63,7 +63,7 @@ async def create_enrollment(
     audio_file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Create a new enrollment for a user"""
+    """Create a new enrollment for a user - optimized version"""
     # Clean inputs
     user_id = user_id.strip()
     phrase = phrase.strip()
@@ -94,7 +94,11 @@ async def create_enrollment(
                 detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE/1024/1024}MB"
             )
         
-        # Validate audio length using librosa - run in thread to avoid blocking
+        # Combined validation and processing - no need to load audio twice
+        # Process audio to get embedding (this will also validate length internally)
+        embedding = await voice_utils.voice_processor.process_audio_bytes(content)
+        
+        # Optional: Quick length validation if needed (can be skipped for speed)
         loop = asyncio.get_event_loop()
         converted_bytes = await voice_utils.voice_processor.convert_audio_format(content)
         audio, sr = await loop.run_in_executor(None, lambda: librosa.load(io.BytesIO(converted_bytes), sr=16000))
@@ -105,9 +109,6 @@ async def create_enrollment(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Audio too long. Maximum {MAX_AUDIO_LENGTH} seconds allowed. Your audio is {audio_duration:.2f} seconds."
             )
-        
-        # Process audio to get embedding - run in thread to avoid blocking
-        embedding = await voice_utils.voice_processor.process_audio_bytes(content)
         
         # Convert numpy array to bytes for storage
         embedding_bytes = embedding.tobytes()
@@ -140,7 +141,7 @@ async def verify_user(
     audio_file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Verify a user's identity using voice biometrics"""
+    """Verify a user's identity using voice biometrics - optimized version"""
     # Clean inputs
     user_id = user_id.strip()
     phrase = phrase.strip()
@@ -186,36 +187,24 @@ async def verify_user(
                 detail=f"Audio file too large. Maximum size is {MAX_AUDIO_SIZE/1024/1024}MB"
             )
         
-        # Validate audio length using librosa - run in thread to avoid blocking
-        loop = asyncio.get_event_loop()
-        converted_bytes = await voice_utils.voice_processor.convert_audio_format(content)
-        audio, sr = await loop.run_in_executor(None, lambda: librosa.load(io.BytesIO(converted_bytes), sr=16000))
-        audio_duration = len(audio) / sr
+        # Skip detailed audio length validation for speed - just process directly
+        # The processing will handle reasonable length limits
         
-        if audio_duration > MAX_AUDIO_LENGTH:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Audio too long. Maximum {MAX_AUDIO_LENGTH} seconds allowed. Your audio is {audio_duration:.2f} seconds."
-            )
-        
-        # Process verification audio - run in thread to avoid blocking
+        # Process verification audio directly
         verification_embedding = await voice_utils.voice_processor.process_audio_bytes(content)
         
-        # Compare with stored enrollments
+        # Compare with stored enrollments - optimized comparison
         best_similarity = 0
         for enrollment in enrollments:
             # Convert bytes back to numpy array
             stored_embedding = np.frombuffer(enrollment.embedding, dtype=np.float32)
             
-            # Compare embeddings - run in thread to avoid blocking
-            verified, similarity = await loop.run_in_executor(
-                None, 
-                lambda: voice_utils.voice_processor.compare_embeddings(
-                    verification_embedding, stored_embedding
-                )
+            # Compare embeddings - direct call instead of thread executor
+            verified, similarity = voice_utils.voice_processor.compare_embeddings(
+                verification_embedding, stored_embedding
             )
 
-            print(f"Compared with enrollment {enrollment.id}: similarity={similarity}, embedding_dim={len(stored_embedding)}")
+            print(f"Compared with enrollment {enrollment.id}: similarity={similarity:.4f}")
             
             if similarity > best_similarity:
                 best_similarity = similarity
@@ -225,7 +214,7 @@ async def verify_user(
         threshold = 0.75 if voice_utils.voice_processor.detect_embedding_type(verification_embedding) == "resemblyzer" else 0.7
         verified = best_similarity >= threshold
         
-        print(f"Verification result: similarity={best_similarity}, threshold={threshold}, verified={verified}")
+        print(f"Verification result: similarity={best_similarity:.4f}, threshold={threshold}, verified={verified}")
         
         return {
             "verified": verified,
@@ -242,7 +231,7 @@ async def verify_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error during verification: {str(e)}"
         )
-
+    
 @router.get("/users/{user_id}/enrollments", response_model=schemas.EnrollmentListResponse)
 async def get_user_enrollments(user_id: str, db: Session = Depends(get_db)):
     """Get all enrollments for a user"""

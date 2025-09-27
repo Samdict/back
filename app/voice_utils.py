@@ -233,7 +233,7 @@ class VoiceProcessor:
             
         except Exception as e:
             raise Exception(f"Error processing audio bytes: {str(e)}")
-            
+    
     def _extract_enhanced_features_sync(self, audio):
         """Extract multiple audio features for better speaker discrimination - optimized sync version"""
         # Use reduced parameters for faster computation
@@ -286,7 +286,7 @@ class VoiceProcessor:
         # Combine features (without tonnetz)
         embedding = np.concatenate([mfcc_stats, chroma_stats, contrast_stats])
         
-        return embedding.astype(np.float32)   # Use float32 instead of float64
+        return embedding.astype(np.float32)
     
     async def extract_enhanced_features(self, audio):
         """Async wrapper for enhanced features extraction"""
@@ -300,7 +300,7 @@ class VoiceProcessor:
             return "resemblyzer" if len(embedding) == 256 else "fallback"
         else:
             # Optimized fallback embeddings are now ~91-dimensional (reduced from 170)
-            return "fallback" if len(embedding) in [170, 170] else "unknown"
+            return "fallback" if len(embedding) in [91, 170] else "unknown"
     
     def compare_embeddings(self, embedding1, embedding2, threshold=0.75):
         """Compare two embeddings using cosine similarity with compatibility handling - optimized"""

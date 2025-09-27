@@ -246,7 +246,7 @@ class VoiceProcessor:
         mfccs = librosa.feature.mfcc(
             y=audio, 
             sr=self.sample_rate, 
-            n_mfcc=20,  # Reduced from 40
+            n_mfcc=40,  # Reduced from 40
             hop_length=hop_length,
             n_fft=n_fft
         )

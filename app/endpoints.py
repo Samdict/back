@@ -99,16 +99,16 @@ async def create_enrollment(
         embedding = await voice_utils.voice_processor.process_audio_bytes(content)
         
         # Optional: Quick length validation if needed (can be skipped for speed)
-        loop = asyncio.get_event_loop()
-        converted_bytes = await voice_utils.voice_processor.convert_audio_format(content)
-        audio, sr = await loop.run_in_executor(None, lambda: librosa.load(io.BytesIO(converted_bytes), sr=16000))
-        audio_duration = len(audio) / sr
+        # loop = asyncio.get_event_loop()
+        # converted_bytes = await voice_utils.voice_processor.convert_audio_format(content)
+        # audio, sr = await loop.run_in_executor(None, lambda: librosa.load(io.BytesIO(converted_bytes), sr=16000))
+        # audio_duration = len(audio) / sr
         
-        if audio_duration > MAX_AUDIO_LENGTH:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Audio too long. Maximum {MAX_AUDIO_LENGTH} seconds allowed. Your audio is {audio_duration:.2f} seconds."
-            )
+        # if audio_duration > MAX_AUDIO_LENGTH:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_400_BAD_REQUEST,
+        #         detail=f"Audio too long. Maximum {MAX_AUDIO_LENGTH} seconds allowed. Your audio is {audio_duration:.2f} seconds."
+        #     )
         
         # Convert numpy array to bytes for storage
         embedding_bytes = embedding.tobytes()

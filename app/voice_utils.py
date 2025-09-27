@@ -191,7 +191,7 @@ class VoiceProcessor:
                     audio_file, 
                     sr=self.sample_rate,
                     mono=True,
-                    dtype=np.float64  # Use float32 instead of float64
+                    dtype=np.float32  # Use float32 instead of float64
                 )
                 
                 # Skip noise reduction for very short audio
@@ -202,9 +202,9 @@ class VoiceProcessor:
                             y=audio,
                             sr=self.sample_rate,
                             stationary=True,
-                            prop_decrease=0.75,
-                            n_fft=512,
-                            win_length=512
+                            prop_decrease=0.3,
+                            n_fft=256,
+                            win_length=256
                         )
                     except:
                         pass  # Continue with original audio if noise reduction fails
@@ -219,7 +219,7 @@ class VoiceProcessor:
                     # Use enhanced features for better accuracy
                     embedding = self._extract_enhanced_features_sync(audio)
                 
-                return embedding.astype(np.float64)  # Use float32 instead of float64
+                return embedding.astype(np.float32)
             
             # Run audio processing in thread pool
             loop = asyncio.get_event_loop()
@@ -233,7 +233,7 @@ class VoiceProcessor:
             
         except Exception as e:
             raise Exception(f"Error processing audio bytes: {str(e)}")
-    
+            
     def _extract_enhanced_features_sync(self, audio):
         """Extract multiple audio features for better speaker discrimination - optimized sync version"""
         # Use reduced parameters for faster computation
@@ -286,7 +286,7 @@ class VoiceProcessor:
         # Combine features (without tonnetz)
         embedding = np.concatenate([mfcc_stats, chroma_stats, contrast_stats])
         
-        return embedding.astype(np.float64)   # Use float32 instead of float64
+        return embedding.astype(np.float32)   # Use float32 instead of float64
     
     async def extract_enhanced_features(self, audio):
         """Async wrapper for enhanced features extraction"""

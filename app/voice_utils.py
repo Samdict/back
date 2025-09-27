@@ -45,9 +45,9 @@ class VoiceProcessor:
         # Optimized noise reduction parameters
         self.noise_reduction_params = {
             'stationary': True,
-            'prop_decrease': 0.75,  # Reduced for faster processing
-            'n_fft': 512,  # Reduced from 512 for speed
-            'win_length': 512  # Reduced from 512 for speed
+            'prop_decrease': 0.5,  # Reduced for faster processing
+            'n_fft': 256,  # Reduced from 512 for speed
+            'win_length': 256  # Reduced from 512 for speed
         }
         
         # Cache size limits to prevent memory issues
@@ -156,9 +156,9 @@ class VoiceProcessor:
                     y=audio,
                     sr=self.sample_rate,
                     stationary=True,
-                    prop_decrease=0.75,  # Less aggressive for speed
-                    n_fft=512,  # Smaller FFT for speed
-                    win_length=512
+                    prop_decrease=0.3,  # Less aggressive for speed
+                    n_fft=256,  # Smaller FFT for speed
+                    win_length=256
                 )
                 return reduced_noise
             except Exception as e:
@@ -244,7 +244,7 @@ class VoiceProcessor:
         mfccs = librosa.feature.mfcc(
             y=audio, 
             sr=self.sample_rate, 
-            n_mfcc=40,  # Reduced from 40
+            n_mfcc=20,  # Reduced from 40
             hop_length=hop_length,
             n_fft=n_fft
         )
@@ -300,7 +300,7 @@ class VoiceProcessor:
             return "resemblyzer" if len(embedding) == 256 else "fallback"
         else:
             # Optimized fallback embeddings are now ~91-dimensional (reduced from 170)
-            return "fallback" if len(embedding) in [91, 170] else "unknown"
+            return "fallback" if len(embedding) == 170 else "unknown"
     
     def compare_embeddings(self, embedding1, embedding2, threshold=0.75):
         """Compare two embeddings using cosine similarity with compatibility handling - optimized"""

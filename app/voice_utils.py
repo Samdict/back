@@ -45,9 +45,9 @@ class VoiceProcessor:
         # Optimized noise reduction parameters
         self.noise_reduction_params = {
             'stationary': True,
-            'prop_decrease': 0.5,  # Reduced for faster processing
-            'n_fft': 256,  # Reduced from 512 for speed
-            'win_length': 256  # Reduced from 512 for speed
+            'prop_decrease': 0.75,  # Reduced for faster processing
+            'n_fft': 512,  # Reduced from 512 for speed
+            'win_length': 512  # Reduced from 512 for speed
         }
         
         # Cache size limits to prevent memory issues
@@ -98,13 +98,38 @@ class VoiceProcessor:
                 audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=self.sample_rate)
                 return audio_bytes  # Return original if it works
             except:
-                # If librosa can't read it, convert to WAV
+                # If librosa can't read it, convert to WAV using temporary file approach
                 try:
-                    # Use in-memory conversion instead of temp files
-                    audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
-                    wav_io = io.BytesIO()
-                    audio.export(wav_io, format="wav")
-                    return wav_io.getvalue()
+                    # Create a temporary file with proper extension detection
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.audio') as tmp:
+                        tmp.write(audio_bytes)
+                        tmp_path = tmp.name
+                    
+                    try:
+                        # Try different common audio formats
+                        for fmt in ['webm', 'mp3', 'wav', 'ogg', 'm4a', 'mp4']:
+                            try:
+                                audio = AudioSegment.from_file(tmp_path, format=fmt)
+                                wav_io = io.BytesIO()
+                                audio.export(wav_io, format="wav")
+                                converted_bytes = wav_io.getvalue()
+                                return converted_bytes
+                            except:
+                                continue
+                        
+                        # If all formats fail, try without format specification
+                        audio = AudioSegment.from_file(tmp_path)
+                        wav_io = io.BytesIO()
+                        audio.export(wav_io, format="wav")
+                        return wav_io.getvalue()
+                        
+                    finally:
+                        # Clean up temp file
+                        try:
+                            os.unlink(tmp_path)
+                        except:
+                            pass
+                            
                 except Exception as e:
                     raise Exception(f"Audio conversion failed: {str(e)}")
         
@@ -194,7 +219,7 @@ class VoiceProcessor:
                     # Use enhanced features for better accuracy
                     embedding = self._extract_enhanced_features_sync(audio)
                 
-                return embedding.astype(np.float64) # Use float64 for consistency was 32 before
+                return embedding.astype(np.float64)  # Use float32 instead of float64
             
             # Run audio processing in thread pool
             loop = asyncio.get_event_loop()
@@ -261,7 +286,7 @@ class VoiceProcessor:
         # Combine features (without tonnetz)
         embedding = np.concatenate([mfcc_stats, chroma_stats, contrast_stats])
         
-        return embedding.astype(np.float64) # was np.float32
+        return embedding.astype(np.float64)   # Use float32 instead of float64
     
     async def extract_enhanced_features(self, audio):
         """Async wrapper for enhanced features extraction"""
@@ -275,7 +300,7 @@ class VoiceProcessor:
             return "resemblyzer" if len(embedding) == 256 else "fallback"
         else:
             # Optimized fallback embeddings are now ~91-dimensional (reduced from 170)
-            return "fallback" if len(embedding) in [91, 170] else "unknown"
+            return "fallback" if len(embedding) in [170, 170] else "unknown"
     
     def compare_embeddings(self, embedding1, embedding2, threshold=0.75):
         """Compare two embeddings using cosine similarity with compatibility handling - optimized"""

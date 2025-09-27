@@ -45,9 +45,9 @@ class VoiceProcessor:
         # Optimized noise reduction parameters
         self.noise_reduction_params = {
             'stationary': True,
-            'prop_decrease': 0.5,  # Reduced for faster processing
-            'n_fft': 256,  # Reduced from 512 for speed
-            'win_length': 256  # Reduced from 512 for speed
+            'prop_decrease': 0.75,  # Reduced for faster processing
+            'n_fft': 512,  # Reduced from 512 for speed
+            'win_length': 512  # Reduced from 512 for speed
         }
         
         # Cache size limits to prevent memory issues
@@ -94,44 +94,41 @@ class VoiceProcessor:
         
         def _convert_sync():
             try:
-                # Try to load with librosa first (fastest path)
-                audio, _ = librosa.load(io.BytesIO(audio_bytes), sr=self.sample_rate)
-                return audio_bytes  # Return original if it works
-            except:
-                # If librosa can't read it, convert to WAV using temporary file approach
+                # First try to detect and convert using pydub for better format support
+                audio_file = io.BytesIO(audio_bytes)
+                
+                # Try to load with pydub first (handles more formats)
                 try:
-                    # Create a temporary file with proper extension detection
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.audio') as tmp:
-                        tmp.write(audio_bytes)
-                        tmp_path = tmp.name
+                    # Reset file pointer
+                    audio_file.seek(0)
+                    audio_segment = AudioSegment.from_file(audio_file)
                     
+                    # Export to WAV format in memory
+                    wav_io = io.BytesIO()
+                    audio_segment = audio_segment.set_frame_rate(self.sample_rate).set_channels(1)
+                    audio_segment.export(wav_io, format="wav")
+                    converted_bytes = wav_io.getvalue()
+                    
+                    # Verify the converted audio can be loaded by librosa
+                    verify_io = io.BytesIO(converted_bytes)
+                    librosa.load(verify_io, sr=self.sample_rate)
+                    
+                    return converted_bytes
+                    
+                except Exception as pydub_error:
+                    print(f"Pydub conversion failed, trying librosa directly: {pydub_error}")
+                    
+                    # Fallback to librosa direct loading
+                    audio_file.seek(0)
                     try:
-                        # Try different common audio formats
-                        for fmt in ['webm', 'mp3', 'wav', 'ogg', 'm4a', 'mp4']:
-                            try:
-                                audio = AudioSegment.from_file(tmp_path, format=fmt)
-                                wav_io = io.BytesIO()
-                                audio.export(wav_io, format="wav")
-                                converted_bytes = wav_io.getvalue()
-                                return converted_bytes
-                            except:
-                                continue
+                        audio, _ = librosa.load(audio_file, sr=self.sample_rate)
+                        return audio_bytes  # Return original if librosa can load it
+                    except Exception as librosa_error:
+                        print(f"Librosa direct load also failed: {librosa_error}")
+                        raise Exception(f"Audio conversion failed with both methods: Pydub: {pydub_error}, Librosa: {librosa_error}")
                         
-                        # If all formats fail, try without format specification
-                        audio = AudioSegment.from_file(tmp_path)
-                        wav_io = io.BytesIO()
-                        audio.export(wav_io, format="wav")
-                        return wav_io.getvalue()
-                        
-                    finally:
-                        # Clean up temp file
-                        try:
-                            os.unlink(tmp_path)
-                        except:
-                            pass
-                            
-                except Exception as e:
-                    raise Exception(f"Audio conversion failed: {str(e)}")
+            except Exception as e:
+                raise Exception(f"Audio conversion failed: {str(e)}")
         
         # Run conversion in thread pool
         loop = asyncio.get_event_loop()
@@ -156,9 +153,9 @@ class VoiceProcessor:
                     y=audio,
                     sr=self.sample_rate,
                     stationary=True,
-                    prop_decrease=0.3,  # Less aggressive for speed
-                    n_fft=256,  # Smaller FFT for speed
-                    win_length=256
+                    prop_decrease=0.75,  # Less aggressive for speed
+                    n_fft=512,  # Smaller FFT for speed
+                    win_length=512
                 )
                 return reduced_noise
             except Exception as e:
@@ -180,50 +177,55 @@ class VoiceProcessor:
                 print("Cache hit - returning cached embedding")
                 return self._embedding_cache[cache_key]
             
-            def _process_audio_sync():
+            # Convert audio to compatible format first
+            converted_bytes = await self.convert_audio_format(audio_bytes)
+            
+            def _process_audio_sync(converted_bytes):
                 """Synchronous audio processing for thread pool"""
-                # Convert audio to a format librosa can read if needed
-                # Load audio from bytes with optimized parameters
-                audio_file = io.BytesIO(audio_bytes)
+                try:
+                    # Load audio from converted bytes
+                    audio_file = io.BytesIO(converted_bytes)
+                    
+                    # Load with reduced precision for speed (mono, specific sample rate)
+                    audio, _ = librosa.load(
+                        audio_file, 
+                        sr=self.sample_rate,
+                        mono=True,
+                        dtype=np.float32  # Use float32 instead of float64
+                    )
+                    
+                    # Skip noise reduction for very short audio
+                    if len(audio) >= self.sample_rate:
+                        # Simplified noise reduction
+                        try:
+                            audio = nr.reduce_noise(
+                                y=audio,
+                                sr=self.sample_rate,
+                                stationary=True,
+                                prop_decrease=0.75,
+                                n_fft=512,
+                                win_length=512
+                            )
+                        except:
+                            pass  # Continue with original audio if noise reduction fails
+                    
+                    # Process with appropriate encoder
+                    if RESEMBLYZER_AVAILABLE and self.encoder is not None:
+                        # Use resemblyzer with preprocessing
+                        processed_audio = preprocess_wav(audio, source_sr=self.sample_rate)
+                        embedding = self.encoder.embed_utterance(processed_audio)
+                    else:
+                        # Use enhanced features for better accuracy
+                        embedding = self._extract_enhanced_features_sync(audio)
+                    
+                    return embedding.astype(np.float32)
                 
-                # Load with reduced precision for speed (mono, specific sample rate)
-                audio, _ = librosa.load(
-                    audio_file, 
-                    sr=self.sample_rate,
-                    mono=True,
-                    dtype=np.float32  # Use float32 instead of float64
-                )
-                
-                # Skip noise reduction for very short audio
-                if len(audio) >= self.sample_rate:
-                    # Simplified noise reduction
-                    try:
-                        audio = nr.reduce_noise(
-                            y=audio,
-                            sr=self.sample_rate,
-                            stationary=True,
-                            prop_decrease=0.3,
-                            n_fft=256,
-                            win_length=256
-                        )
-                    except:
-                        pass  # Continue with original audio if noise reduction fails
-                
-                # Process with appropriate encoder
-                if RESEMBLYZER_AVAILABLE and self.encoder is not None:
-                    # Use resemblyzer with preprocessing
-                    # Preprocess the wav for resemblyzer
-                    processed_audio = preprocess_wav(audio, source_sr=self.sample_rate)
-                    embedding = self.encoder.embed_utterance(processed_audio)
-                else:
-                    # Use enhanced features for better accuracy
-                    embedding = self._extract_enhanced_features_sync(audio)
-                
-                return embedding.astype(np.float32)
+                except Exception as e:
+                    raise Exception(f"Error processing converted audio: {str(e)}")
             
             # Run audio processing in thread pool
             loop = asyncio.get_event_loop()
-            embedding = await loop.run_in_executor(self._thread_pool, _process_audio_sync)
+            embedding = await loop.run_in_executor(self._thread_pool, _process_audio_sync, converted_bytes)
             
             # Cache the result
             self._embedding_cache[cache_key] = embedding
